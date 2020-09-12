@@ -1,0 +1,13 @@
+name = "Websocket"
+uuid = "bfba07e7-5cfa-4c2d-9335-97d81f085c44"
+authors = ["Michael Jonker <michael@openpoint.ie> and contributors"]
+version = "0.1.0"
+
+[compat]
+julia = "1"
+
+[extras]
+Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
+
+[targets]
+test = ["Test"]
