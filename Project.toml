@@ -1,9 +1,10 @@
 name = "Websocket"
 uuid = "bfba07e7-5cfa-4c2d-9335-97d81f085c44"
 authors = ["Michael Jonker <michael@openpoint.ie> and contributors"]
-version = "0.1.0"
+version = "0.0.0"
 
 [deps]
+Base64 = "2a0f44e3-6c83-55bd-87e4-b1978d98bd5f"
 HTTP = "cd3eb016-35fb-5094-929b-558a96fad6f3"
 URIParser = "30578b45-9adc-5946-b283-645ec420af67"
 

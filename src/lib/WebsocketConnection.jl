@@ -22,12 +22,12 @@ struct WebsocketConnection
             [],
             WebsocketFrame(maskBytes, frameHeader)
         )
-        @async_err begin
+        @async begin
             for data in dataOut
                 send(self, data)
             end
         end
-        @async_err begin
+        @async begin
             for data in dataIn
                 handleSocketData(self, data)
             end

@@ -1,100 +1,87 @@
-module WebsocketClient
-
-using HTTP, URIParser
-
-include("utils.jl")
 include("WebsocketConnection.jl")
 
-export connect
-
-struct Websocket
+mutable struct WebsocketClient
     url::String
-    connection::WebsocketConnection
+    connection::Union{Nothing, WebsocketConnection}
     send::Function
-    messages::Channel
-    
-    function Websocket(
-        url::String,
-        io::HTTP.Streams.Stream,
-        dataIn::Channel,
-        dataOut::Channel
+    eventFlags::Dict{Symbol, Bool}
+    events::Dict{Symbol, Channel}
+    on::Function
+    connect::Function
+
+    function WebsocketClient(
+        url::String;
+            config::NamedTuple = NamedTuple(),
     )
-        new(
+        dataOut = Channel(Inf)
+        self = new(
             url,
-            WebsocketConnection(io, dataIn, dataOut),
+            nothing,
             (data) -> put!(dataOut, data),
-            Channel(Inf)
+            Dict{Symbol, Bool}(
+                :message => false,
+                :connect => false,
+                :error => false,
+            ),
+            Dict{Symbol, Channel}(
+                :message => Channel(),
+                :connect => Channel(),
+                :error => Channel(),
+            )
         )
+        self.connect = (;
+            headers::NamedTuple = NamedTuple(),
+            options::NamedTuple = NamedTuple(),
+        ) -> connect(self, dataOut; headers, options)
+        self.on = (event::String, cb::Function) -> on(self, event, cb)
+        self
     end
 end
 
-function headers()
-    Dict(
-        "Upgrade" => "websocket",
-        "Connection" => "Upgrade",
-        "Sec-WebSocket-Key" => nonce(),
-        "Sec-WebSocket-Version" => "13"
-    )
-end
-
-function connect(url::String)
-    sockets = Channel{Websocket}()
-    @async_err HTTP.open("GET", url; headers = headers()) do stream
-        startread(stream)
-        #validhandshake(stream, headers)
-        dataIn = Channel(Inf)
-        dataOut = Channel(Inf)
-        ws = Websocket(url, stream, dataIn, dataOut)
-        put!(sockets, ws)
-        while !eof(stream)
-            data = readavailable(stream)
-            put!(dataIn, data)
+function on(self::WebsocketClient, event::String, cb::Function)
+    key = Symbol(event)
+    if !haskey(self.eventFlags, key)
+        @warn """The event "$event" is not a recognised event"""
+        return
+    end
+    if self.eventFlags[key]
+        @warn """The event "$event" has already been set"""
+        return
+    end
+    self.eventFlags[key] = true
+    @async begin
+        for payload in self.events[key]
+            cb(payload)
         end
     end
-    ws = take!(sockets)
-    close(sockets)
-    ws
+end
+
+function connect(client::WebsocketClient, dataOut::Channel)
+    ready = Condition()
+    @async try
+        HTTP.open("GET", client.url; headers = makeHeaders()) do stream
+            startread(stream)
+            #validhandshake(stream, headers)
+            dataIn = Channel(Inf)
+            client.connection = WebsocketConnection(stream, dataIn, dataOut)
+            eventFlags = client.eventFlags
+            #notify(ready, "error"; error = true)
+            notify(ready)
+            while !eof(stream)
+                data = readavailable(stream)
+                eventFlags[:message] && put!(client.events[:message], data)
+                #put!(dataIn, data)
+            end
+            eventFlags[:disconnect] && put(client.events[:disconnect], client.url)
+        end
+    catch err
+        @error errorMsg exception = (err, catch_backtrace())
+        exit()
+    end
+    wait(ready)
+    client
 end
 
 function validhandshake(stream, headers)
     return true
 end
-
-end
-#=
-using HTTP, URIParser
-include("lib/utils.jl")
-
-uri =  URI("wss://ws.bitstamp.net")
-#@show uri.scheme
-#@show uri.host
-#@show Int(uri.port)
-#@show uri.path
-#@show uri.query
-#@show uri.fragment
-#@show uri.specifies_authority
-
-options = (;
-    hostname = "httpbin.org/ip",
-    port = "80"
-)
-headers = Dict(
-    "Upgrade" => "websocket",
-    "Connection" => "Upgrade",
-    "Sec-WebSocket-Key" => nonce(),
-    "Sec-WebSocket-Version" => "13"
-)
-
-HTTP.open("GET", "wss://echo.websocket.org"; headers = headers) do http
-    #startread(http)
-    #@show http.message.status
-    
-    #explain(http)
-    #explain(http.stream)
-    #explain(http.message)
-    #explain(http.message.request)
-    ws = http.stream
-end
-
-end
-=#
