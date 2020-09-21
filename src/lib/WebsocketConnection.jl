@@ -1,40 +1,51 @@
 include("WebsocketFrame.jl")
+const ioTypes = Union{Nothing, WebsocketFrame, HTTP.ConnectionPool.Transaction, Timer}
 
 struct WebsocketConnection
-    io::Dict{Symbol, Any}
+    config::NamedTuple
+    io::Dict{Symbol, ioTypes}
+    callbacks::Dict{Symbol, Union{Bool, Function}}
     maskBytes::IOBuffer
     frameHeader::IOBuffer
     closed::Condition
     close::Function
     send::Function
     on::Function
+    ping::Function
 
-    function WebsocketConnection(client::WebsocketClient)
+    function WebsocketConnection(config::NamedTuple)
         @debug "WebsocketConnection"
         maskBytes = newBuffer(4)
         frameHeader = newBuffer(10)
-        atexit(function() 
-            #closeConnection(self, CLOSE_REASON_GOING_AWAY)
-            #wait(self.closed)
-            #!eof(self.io[:stream]) && close(self.io[:stream])
-            #exit()
-        end)
-
+        atexit(() -> (
+            if isopen(self.io[:stream])               
+                close(self.io[:stream])
+                wait(self.closed)
+                sleep(0.001)             
+            end
+        ))
+        @async begin
+            reason = wait(self.closed)
+            callback = self.callbacks[:close]
+            if callback isa Function
+                @async callback(reason)
+            else
+                @warn "websocket connection closed." reason...
+            end
+        end
+        
         self = new(
-            Dict{Symbol, Any}(                                          #io
+            config,                                                     #config
+            Dict{Symbol, ioTypes}(                                      #io
                 :stream => nothing,
-                :callbacks => Dict{Symbol, Union{Bool, Function}}(
-                    :message => false,
-                    :error => false,
-                    :close => false
-                ),
-                #=
-                :channels => Dict{Symbol, Channel}(
-                    :message => Channel(),
-                    :error => Channel{Exception}()
-                ),
-                =#
-                :currentFrame => WebsocketFrame(maskBytes, frameHeader),
+                :currentFrame => WebsocketFrame(config, maskBytes, frameHeader),
+                :closeTimeout => nothing,
+            ),
+            Dict{Symbol, Union{Bool, Function}}(                        #callbacks
+                :message => false,
+                :error => false,
+                :close => false,
+                :pong => false
             ),
             maskBytes,                                                  #maskBytes
             frameHeader,                                                #frameHeader
@@ -42,80 +53,27 @@ struct WebsocketConnection
             (   reasonCode::Int = CLOSE_REASON_NORMAL                   #close
             ) -> closeConnection(self, reasonCode),
             data::String -> send(self, data::String),                   #send
-            (key::Symbol, cb::Function) -> on(self, key, cb)    #on
+            (key::Symbol, cb::Function) -> on(self, key, cb),           #on
+            data::Union{String, Number} -> ping(self, data)             #ping
         )
-        closed = @async begin
-            reason = wait(self.closed)        
-            callback = self.io[:callbacks][:close]
-            callback isa Function && callback(reason)  
-        end
-
-        self
     end
     function on(
         self::WebsocketConnection,
         key::Symbol,
         cb::Function
     )
-        if haskey(self.io[:callbacks], key)
-            if !(self.io[:callbacks][key] isa Function)
-                self.io[:callbacks][key] = cb
-                #=
-                if key === :close
-                    reason = wait(self.closed)
-                    client.flags[:isconnected] = false
-                    cb(reason)
-                else
-                    for payload in self.io[:channels][key]
-                        cb(payload)
+        if haskey(self.callbacks, key)
+            if !(self.callbacks[key] isa Function)
+                self.callbacks[key] = data -> (
+                    try 
+                        cb(data)
+                    catch err
+                        @error "error in WebsocketConnection callback." exception = (err, catch_backtrace())
                     end
-                end
-                =#
+                )
             end
         end
     end
-    #=
-    function on(self::WebsocketConnection, client::WebsocketClient, key::Symbol, cb::Function)
-        flags = self.io[:flags]
-        channels = self.io[:channels]
-        if !haskey(flags, key)
-            @warn """The "$key" event is not recognised"""
-            return
-        end
-        if flags[key]
-            @warn """The event "$key" has already been set"""
-            return
-        end
-        flags[key] = true
-        self.io[:events] = @async begin
-            if key === :close
-                reason = wait(self.closed)
-                client.flags[:isconnected] = false
-                cb(reason)
-            elseif key === :error
-                while isopen(channels[key]) 
-                    for err in channels[key]
-                        cb(err)
-                    end
-                end
-            else
-                while isopen(channels[key]) 
-                        for payload in channels[key]
-                        try
-                            cb(payload)
-                        catch err
-                            if flags[:error]
-                                put!(channels[:error], err)
-                            else
-                                @error "error in callback to websocket." exception = (err, catch_backtrace())
-                            end
-                        end
-                    end
-                end
-            end
-        end
-    end
-    =#
 end
 
 function validateHandshake(headers::Dict{String, String}, request::HTTP.Messages.Response)
@@ -134,49 +92,96 @@ function validateHandshake(headers::Dict{String, String}, request::HTTP.Messages
 end
 
 function connect(
-    self::WebsocketConnection,
-    client::WebsocketClient,
+    config::NamedTuple,
     url::String,
     connected::Condition,
     headers::Dict{String, String};
-        kwargs...
+        options...
 )
     @debug "WebsocketConnection.connect"
-    HTTP.open("GET", url, headers;
-        kwargs...
-    ) do io
-        try
-            request = startread(io)
-            validateHandshake(headers, request)
-            self.io[:stream] = io.stream
-            notify(connected)
-        catch err
-            notify(connected, err; error = true)
-            return
+    let self
+        HTTP.open("GET", url, headers;
+            options...
+        ) do io
+            Sockets.nagle(io.stream.c.io.bio, config.useNagleAlgorithm)
+            try
+                request = startread(io)
+                validateHandshake(headers, request)
+                self = WebsocketConnection(config)
+                self.io[:stream] = io.stream
+                notify(connected, self)
+            catch err
+                notify(connected, err; error = true)
+                return
+            end
+            while !eof(io)
+                data = readavailable(io)
+                handleSocketData(self, data)
+            end
+            closeConnection(self, CLOSE_REASON_ABNORMAL)
+            wait(self.closed)
         end
-        #channels = self.io[:channels]
-        while !eof(io)
-            data = readavailable(io)
-            handleSocketData(self, data)
-        end
-        client.flags[:isconnected] = false 
     end
 end
 function closeConnection(self::WebsocketConnection, reasonCode::Int)
     if !haskey(CLOSE_DESCRIPTIONS, reasonCode)
-        throw(WebsocketError("invalid close reason code: $(reasonCode)."))
+        @error WebsocketError("invalid close reason code: $(reasonCode).")
+        reasonCode = CLOSE_REASON_NOT_PROVIDED
     end
-    sendCloseFrame(self, reasonCode)
-    #close(self.io[:stream])
+    nowire = [
+        CLOSE_REASON_NOT_PROVIDED,
+        CLOSE_REASON_ABNORMAL
+    ]
+    if !(reasonCode in nowire) && isopen(self.io[:stream])        
+        sendCloseFrame(self, reasonCode)
+        self.io[:closeTimeout] = Timer(timer -> (
+            try
+                isopen(self.io[:stream]) && close(self.io[:stream])
+            catch
+            end
+        ), self.config.closeTimeout)
+    else
+        reason = (;
+            code = reasonCode,
+            description = CLOSE_DESCRIPTIONS[reasonCode],
+        )        
+        isopen(self.io[:stream]) && close(self.io[:stream])
+        @async notify(self.closed, reason; all = true)       
+    end
 end
+
 # Send data
 function send(self::WebsocketConnection, data::String)
     @debug "WebsocketConnection.send"
-    frame = WebsocketFrame(self.maskBytes, self.frameHeader, textbuffer(data))
+    frame = WebsocketFrame(self.config, self.maskBytes, self.frameHeader, textbuffer(data))
     frame.inf[:opcode] = TEXT_FRAME
     fragmentAndSend(self, frame)
 end
 
+function sendCloseFrame(self::WebsocketConnection, reasonCode::Int)
+    description = CLOSE_DESCRIPTIONS[reasonCode]
+    frame = WebsocketFrame(self.config, self.maskBytes, self.frameHeader, textbuffer(description));
+    frame.inf[:opcode] = CONNECTION_CLOSE_FRAME
+    frame.inf[:fin] = true
+    frame.inf[:closeStatus] = reasonCode
+    sendFrame(self, frame)
+end
+function ping(self::WebsocketConnection, data::Union{String, Number})
+    data = textbuffer(data)
+    size(data, 1) > 125 && (data = data[1:125, 1])
+    frame = WebsocketFrame(self.config, self.maskBytes, self.frameHeader, data)
+    frame.inf[:fin] = true
+    frame.inf[:opcode] = PING_FRAME
+    sendFrame(self, frame)
+end
+pong(self::WebsocketConnection, data::Union{String, Number}) = pong(self, textbuffer(data))
+function pong(self::WebsocketConnection, data::Array{UInt8,1})
+    size(data, 1) > 125 && (data = data[1:125, 1])
+    frame = WebsocketFrame(self.config, self.maskBytes, self.frameHeader, data)
+    frame.inf[:fin] = true
+    frame.inf[:opcode] = PONG_FRAME
+    sendFrame(self, frame)
+end
 function fragmentAndSend(self::WebsocketConnection, frame::WebsocketFrame)
     @debug "WebsocketConnection.fragmentAndSend"
     frame.inf[:fin] = true
@@ -185,19 +190,10 @@ end
 
 function sendFrame(self::WebsocketConnection, frame::WebsocketFrame)
     @debug "WebsocketConnection.sendFrame"
-    frame.inf[:mask] = true
+    frame.inf[:mask] = self.config.maskOutgoingPackets
     data = toBuffer(frame)
     isopen(self.io[:stream]) && write(self.io[:stream], read(data))
     close(data)
-end
-
-function sendCloseFrame(self::WebsocketConnection, reasonCode::Int)
-    description = CLOSE_DESCRIPTIONS[reasonCode]
-    frame = WebsocketFrame(self.maskBytes, self.frameHeader, textbuffer(description));
-    frame.inf[:opcode] = CONNECTION_CLOSE_FRAME
-    frame.inf[:fin] = true
-    frame.inf[:closeStatus] = reasonCode
-    sendFrame(self, frame)
 end
 # End send data
 
@@ -210,10 +206,11 @@ function processReceivedData(self::WebsocketConnection, data::Array{UInt8,1})
     frame = self.io[:currentFrame]
     !frame.addData(data) && return
     processFrame(self, frame)
-    self.io[:currentFrame] = WebsocketFrame(self.maskBytes, self.frameHeader)
+    self.io[:currentFrame] = WebsocketFrame(self.config, self.maskBytes, self.frameHeader)
 end
 
 function processFrame(self::WebsocketConnection, frame::WebsocketFrame)
+    
     inf = (; frame.inf...)
     opcode = inf.opcode
 
@@ -221,24 +218,29 @@ function processFrame(self::WebsocketConnection, frame::WebsocketFrame)
 
     elseif opcode === TEXT_FRAME
         data = inf.binaryPayload
-        callback = self.io[:callbacks][:message]
+        callback = self.callbacks[:message]
         callback isa Function && callback(String(data))
     elseif opcode === CONTINUATION_FRAME
 
     elseif opcode === PING_FRAME
-
+        @info "received ping"
+        pong(self, frame.inf[:binaryPayload])
     elseif opcode === PONG_FRAME
-
+        callback = self.callbacks[:pong]
+        if callback isa Function
+            callback(String(frame.inf[:binaryPayload]))
+        end
     elseif opcode === CONNECTION_CLOSE_FRAME
         data = inf.binaryPayload
         reason = (;
             code = inf.closeStatus,
             description = String(data),
         )
-        !eof(self.io[:stream]) && close(self.io[:stream])
-        sleep(1)
+        if self.io[:closeTimeout] isa Timer && isopen(self.io[:closeTimeout])
+            close(self.io[:closeTimeout])
+        end
         notify(self.closed, reason; all = true)
-        @info "notified"
+        isopen(self.io[:stream]) && close(self.io[:stream])
     else
 
     end

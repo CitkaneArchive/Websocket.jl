@@ -13,9 +13,11 @@ newBuffer(size::Int) = IOBuffer(Array{UInt8, 1}(undef, size); maxsize = size, wr
 
 textbuffer(data::String)::Array{UInt8,1} = Array{UInt8,1}(codeunits(data))
 textbuffer(data::Number)::Array{UInt8,1} = Array{UInt8,1}(codeunits(string(data)))
-statusbuffer(status::Int) = reinterpret(UInt8, [hton(UInt16(status))])
-statusint(data::Array{UInt8, 1})::Int = Int(ntoh(reinterpret(UInt16, data)[1]))
-#buffertext(data::Array{UInt8, 1})::String = transcode(String, copy(data))
+buffer16BE(intval::Integer) = copy(reinterpret(UInt8, [hton(UInt16(intval))]))
+buffer32BE(intval::Integer) = copy(reinterpret(UInt8, [hton(UInt32(intval))]))
+int16(data::Array{UInt8, 1})::Int = Int(ntoh(reinterpret(UInt16, data)[1]))
+int32(data::Array{UInt8, 1})::Int = Int(ntoh(reinterpret(UInt32, data)[1]))
+
 
 
 modindex(i::Int, m::Int) = ((i-1) % m) + 1
@@ -26,18 +28,15 @@ function mask!(mask::Array{UInt8, 1}, data::Array{UInt8, 1})
     end
 end
 
-function makeConfig(overrides::NamedTuple)
-    defaultConfig
-end
 function makeHeaders(extend::Dict{String, String})
     headers = Dict{String, String}(
-        "Sec-WebSocket-Version" => "13",
+        "Sec-WebSocket-Version" => defaultHeaders["Sec-WebSocket-Version"],
     )
     for (key, value) in extend
         headers[key] = value
     end
-    headers["Upgrade"] = "websocket"
-    headers["Connection"] = "Upgrade"
+    headers["Upgrade"] = defaultHeaders["Upgrade"]
+    headers["Connection"] = defaultHeaders["Connection"]
     headers["Sec-WebSocket-Key"] = requestHash()
 
     headers
