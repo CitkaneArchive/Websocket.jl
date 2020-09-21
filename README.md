@@ -30,10 +30,12 @@ using Websocket
 client = WebsocketClient()
 
 client.on(:connect, ws -> (
+
     ws.on(:message, message -> (
         @show message
     ));
     ws.send("hello world")
+    
 ))
 
 @async try
@@ -47,3 +49,10 @@ end
 Application code goes here
 =#
 ```
+## Custom options
+```julia
+
+client.connect(url::String, [customHeaders::Dict{String, String}; kwargs...])
+
+```
+Where `kwargs` are [HTTP request](https://juliaweb.github.io/HTTP.jl/stable/public_interface/#Requests-1) options.

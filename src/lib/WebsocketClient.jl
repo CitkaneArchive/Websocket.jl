@@ -1,87 +1,95 @@
+struct WebsocketClient
+    config::NamedTuple
+    connect::Function
+    callbacks::Dict{Symbol, Union{Bool, Function}}
+    flags::Dict{Symbol, Bool}
+    on::Function
+       
+    function WebsocketClient(config::NamedTuple = NamedTuple()) 
+        @debug "WebsocketClient"                   
+        self = new(
+            makeConfig(config),
+            (   url::String, 
+                headers::Dict{String, String} = Dict{String, String}();
+                    kwargs...
+            ) -> makeConnection(self, url, headers; kwargs...),
+            Dict{Symbol, Union{Bool, Function}}(
+                :connect => false,
+                :connectError => false,
+            ),
+            Dict{Symbol, Bool}(
+                :isconnected => false
+            ),
+            (key::Symbol, cb::Function) -> on(self, key, cb)
+        )
+    end
+    function on(
+        self::WebsocketClient,
+        key::Symbol,
+        cb::Function
+    )
+        if haskey(self.callbacks, key)
+            self.callbacks[key] = cb
+        end
+    end
+end
+
 include("WebsocketConnection.jl")
 
-mutable struct WebsocketClient
-    url::String
-    connection::Union{Nothing, WebsocketConnection}
-    send::Function
-    eventFlags::Dict{Symbol, Bool}
-    events::Dict{Symbol, Channel}
-    on::Function
-    connect::Function
+function makeConnection(
+    self::WebsocketClient,
+    urlString::String,
+    headers::Dict{String, String};
+        kwargs...
+)
+    @debug "WebsocketClient.connect"
 
-    function WebsocketClient(
-        url::String;
-            config::NamedTuple = NamedTuple(),
-    )
-        dataOut = Channel(Inf)
-        self = new(
-            url,
-            nothing,
-            (data) -> put!(dataOut, data),
-            Dict{Symbol, Bool}(
-                :message => false,
-                :connect => false,
-                :error => false,
-            ),
-            Dict{Symbol, Channel}(
-                :message => Channel(),
-                :connect => Channel(),
-                :error => Channel(),
-            )
+    if self.flags[:isconnected]
+        @error WebsocketError(
+            """called "connect" on a WebsocketClient that is open or opening."""
         )
-        self.connect = (;
-            headers::NamedTuple = NamedTuple(),
-            options::NamedTuple = NamedTuple(),
-        ) -> connect(self, dataOut; headers, options)
-        self.on = (event::String, cb::Function) -> on(self, event, cb)
-        self
-    end
-end
-
-function on(self::WebsocketClient, event::String, cb::Function)
-    key = Symbol(event)
-    if !haskey(self.eventFlags, key)
-        @warn """The event "$event" is not a recognised event"""
         return
     end
-    if self.eventFlags[key]
-        @warn """The event "$event" has already been set"""
-        return
-    end
-    self.eventFlags[key] = true
-    @async begin
-        for payload in self.events[key]
-            cb(payload)
-        end
-    end
-end
+    self.flags[:isconnected] = true
 
-function connect(client::WebsocketClient, dataOut::Channel)
-    ready = Condition()
-    @async try
-        HTTP.open("GET", client.url; headers = makeHeaders()) do stream
-            startread(stream)
-            #validhandshake(stream, headers)
-            dataIn = Channel(Inf)
-            client.connection = WebsocketConnection(stream, dataIn, dataOut)
-            eventFlags = client.eventFlags
-            #notify(ready, "error"; error = true)
-            notify(ready)
-            while !eof(stream)
-                data = readavailable(stream)
-                eventFlags[:message] && put!(client.events[:message], data)
-                #put!(dataIn, data)
-            end
-            eventFlags[:disconnect] && put(client.events[:disconnect], client.url)
+    connection = WebsocketConnection(self)
+    connected = Condition()
+
+    @async try            
+        wait(connected)
+        if self.callbacks[:connect] isa Function            
+            self.callbacks[:connect](connection)
+        else
+            throw(WebsocketError("""called connect() before registering ":connect" event."""))
         end
     catch err
-        @error errorMsg exception = (err, catch_backtrace())
-        exit()
+        self.flags[:isconnected] = false
+        if self.callbacks[:connectError] isa Function
+            self.callbacks[:connectError](err)
+        else
+            println()
+            @error "error in websocket connection" exception = (err, catch_backtrace())
+            println()
+            exit()                
+        end
     end
-    wait(ready)
-    client
-end
 
-function validhandshake(stream, headers)
-    return true
+    try
+        headers = makeHeaders(headers)
+        if !(headers["Sec-WebSocket-Version"] in ["8", "13"])
+            throw(WebsocketError("only version 8 and 13 of websocket protocol supported."))
+        end
+        connect(
+            connection,
+            self,
+            urlString,
+            connected,
+            headers;
+                reuse_limit=0, 
+                kwargs...
+        )
+    catch err
+        self.flags[:isconnected] = false
+        @async notify(connected, err; error = true)
+    end
 end
