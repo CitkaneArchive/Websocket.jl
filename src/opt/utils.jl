@@ -8,23 +8,13 @@ function acceptHash(key::String)
     base64encode(digest(MD_SHA1, hashkey))
 end
 
-newBuffer(size::Int) = IOBuffer(Array{UInt8, 1}(undef, size); maxsize = size, write = true, read =true)
-
-
-textbuffer(data::String)::Array{UInt8,1} = Array{UInt8,1}(codeunits(data))
-textbuffer(data::Number)::Array{UInt8,1} = Array{UInt8,1}(codeunits(string(data)))
-buffer16BE(intval::Integer) = copy(reinterpret(UInt8, [hton(UInt16(intval))]))
-buffer32BE(intval::Integer) = copy(reinterpret(UInt8, [hton(UInt32(intval))]))
-int16(data::Array{UInt8, 1})::Int = Int(ntoh(reinterpret(UInt16, data)[1]))
-int32(data::Array{UInt8, 1})::Int = Int(ntoh(reinterpret(UInt32, data)[1]))
-
-
+textbuffer(data::String)::Array{UInt8,1} = Array{UInt8,1}(data)
+textbuffer(data::Number)::Array{UInt8,1} = Array{UInt8,1}(string(data))
 
 modindex(i::Int, m::Int) = ((i-1) % m) + 1
-newMask() = rand(UInt8, 4)
-function mask!(mask::Array{UInt8, 1}, data::Array{UInt8, 1})
+function mask!(mask::IOBuffer, data::Array{UInt8, 1})
     for (i, value) in enumerate(data)
-       data[i] = value ⊻ mask[modindex(i, length(mask))]
+       data[i] = value ⊻ mask.data[modindex(i, mask.size)]
     end
 end
 
@@ -41,21 +31,7 @@ function makeHeaders(extend::Dict{String, String})
 
     headers
 end
-#=
-macro async_err(fn)
-    quote
-        t = @async try
-            eval($(esc(fn)))
-        catch err
-            bt = catch_backtrace()
-            println()
-            showerror(stderr, err, bt)
-            println()
-            exit()
-        end
-    end
-end
-=#
+
 function explain(object::Any)
     type = typeof(object)
     @show type

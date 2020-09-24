@@ -1,13 +1,10 @@
 struct WebsocketFrame
     config::NamedTuple
-    maskBytes::IOBuffer
-    frameHeader::IOBuffer   
+    buffers::NamedTuple
     inf::Dict{Symbol, Any}
-    addData::Function
     function WebsocketFrame(
         config::NamedTuple,
-        maskBytes::IOBuffer,
-        frameHeader::IOBuffer,
+        buffers::NamedTuple,
         binaryPayload::Array{UInt8, 1} = Array{UInt8, 1}()
     )
         inf = Dict{Symbol, Any}(
@@ -21,87 +18,75 @@ struct WebsocketFrame
             :parseState => DECODE_HEADER,
             :binaryPayload => binaryPayload
         )
-
         self = new(
             config,
-            maskBytes,
-            frameHeader,
-            inf,
-            data::Array{UInt8,1} -> addData(self, data)
+            buffers,
+            inf
         )
     end
 end
 
-function toBuffer(frame::WebsocketFrame)
-    inf = (; frame.inf...)
+function toBuffer(self::WebsocketFrame) 
+    outBuffer = self.buffers.outBuffer
+    !isopen(outBuffer) && return false
+    truncate(outBuffer, 0)
+    maskBytes = self.buffers.maskBytes
+    inf = self.inf
 
-    headerLength = 2
     firstByte = 0x00
     secondByte = 0x00
-    len = 0
-    
+    inf[:fin] && (firstByte |= 0x80)
+    inf[:mask] && (secondByte |= 0x80)
+    firstByte |= (inf[:opcode] & 0x0F)
 
-    inf.fin && (firstByte |= 0x80)
-    inf.mask && (secondByte |= 0x80)
-    firstByte |= (inf.opcode & 0x0F)
-
-    if inf.opcode === CONNECTION_CLOSE_FRAME
-        len = length(inf.binaryPayload) + 2
-        closeStatus = buffer16BE(inf.closeStatus)
-        pushfirst!(inf.binaryPayload, closeStatus...)
-    else
-        len = length(inf.binaryPayload)
+    if inf[:opcode] === CONNECTION_CLOSE_FRAME
+        closeStatus = reinterpret(UInt8, [hton(UInt16(inf[:closeStatus]))])
+        pushfirst!(inf[:binaryPayload], closeStatus...)
     end
 
+    len = length(inf[:binaryPayload])
     if len <= 125
         secondByte |= (len & 0x7F)
     elseif len > 125 && len <= 0xFFFF
         secondByte |= 126
-        headerLength += 2
     elseif len > 0xFFFF
         secondByte |= 127
-        headerLength += 8
     end
 
-    totalLen = len + headerLength + (inf.mask ? 4 : 0)
-    output = IOBuffer(Array{UInt8, 1}(undef, totalLen);
-        maxsize = totalLen,
-        read = true,
-        write = true
-    )
-    header = [UInt8(firstByte), UInt8(secondByte)]
+    write(outBuffer, UInt8(firstByte), UInt8(secondByte))
     
     if len > 125 && len <= 0xFFFF
-        hlen = buffer16BE(len)
-        push!(header, hlen...)
+        write(outBuffer, hton(UInt16(len)))
     elseif len > 0xFFFF
-        hlen = buffer32BE(0x00000000)
-        push!(header, hlen...)
-        hlen = buffer32BE(len)
-        push!(header, hlen...)
+        write(outBuffer, hton(0x00000000), hton(UInt32(len)))
     end
 
-    write(output, header)
-    if inf.mask
-        maskKey = newMask()
-        seek(frame.maskBytes, 0)
-        write(frame.maskBytes, maskKey)
-        write(output, maskKey)
-        mask!(maskKey, inf.binaryPayload)
-        write(output, inf.binaryPayload)
-    elseif len > 0
-
+    if inf[:mask]
+        seekstart(maskBytes)
+        write(maskBytes, hton(0x6eaeb364))
+        seekstart(maskBytes)
+        write(outBuffer, maskBytes)
+        mask!(maskBytes, inf[:binaryPayload])
+        
     end
-    seek(output, 0)
-    output
+
+    unsafe_write(outBuffer, pointer(inf[:binaryPayload]), len)
+    seek(outBuffer, 0)
+    return true
 end
 
-function addData(self::WebsocketFrame, payload::Array{UInt8,1})
+function addData(self::WebsocketFrame)
+
     inf = self.inf
-    if inf[:parseState] === DECODE_HEADER
-        firstByte = payload[1]
-        secondByte = payload[2]
-        
+    header = self.buffers.frameHeader
+    inBuffer = self.buffers.inBuffer
+    maskBytes = self.buffers.maskBytes
+
+    if inf[:parseState] === DECODE_HEADER && inBuffer.size >= 2
+        seekstart(header)
+        write(header, read(inBuffer, 2))
+        firstByte = header.data[1]
+        secondByte = header.data[2]
         inf[:fin] = firstByte & WS_FINAL > 0
         inf[:mask] = secondByte & WS_MASK > 0
         inf[:opcode] = firstByte & WS_OPCODE
@@ -110,37 +95,64 @@ function addData(self::WebsocketFrame, payload::Array{UInt8,1})
         inf[:rsv2] = firstByte & WS_RSV2 > 0
         inf[:rsv3] = firstByte & WS_RSV3 > 0
 
-        if inf[:length] === 126
+        
+
+        if inf[:opcode] >= 0x08
+            inf[:length] > 125 && throw(WebsocketError("illegal control frame longer than 125 bytes."))
+            !inf[:fin] && throw(WebsocketError("control frames must not be fragmented."))
+        end
+
+        
+        if inf[:length] === 0x7e
             inf[:parseState] = WAITING_FOR_16_BIT_LENGTH
-        elseif inf[:length] === 127
+        elseif inf[:length] === 0x7f
             inf[:parseState] = WAITING_FOR_64_BIT_LENGTH
         else
             inf[:parseState] = WAITING_FOR_MASK_KEY
         end
-        
+
     end
     if inf[:parseState] === WAITING_FOR_16_BIT_LENGTH
-
+        if inBuffer.size >= 4
+            write(header, read(inBuffer, 2))
+            ptr = header.ptr
+            seek(header, 2)
+            inf[:length] = Int(ntoh(read(header, UInt16)))
+            seek(header, ptr - 1)
+            inf[:parseState] = WAITING_FOR_MASK_KEY
+        end
     elseif inf[:parseState] === WAITING_FOR_64_BIT_LENGTH
-
+        if inBuffer.size >= 10
+            write(header, read(inBuffer, 8))
+            ptr = header.ptr
+            seek(header, 2)
+            lengthPair = [
+                Int(ntoh(read(header, UInt32))),
+                Int(ntoh(read(header, UInt32)))
+            ]
+            if lengthPair[1] !== 0
+                throw(error("TODO"))
+            end
+            inf[:length] = lengthPair[2]
+            inf[:parseState] = WAITING_FOR_MASK_KEY
+        end
     end
     if inf[:parseState] === WAITING_FOR_MASK_KEY
-        if inf[:mask] && size(payload, 1) >= 4
-            throw(error("TODO: extract mask"))
+        if inf[:mask] && inBuffer.size >= 6
+            seekstart(maskBytes)
+            write(maskBytes, read(inBuffer, 4))
         end
         inf[:parseState] = WAITING_FOR_PAYLOAD
+
     end
     if inf[:parseState] === WAITING_FOR_PAYLOAD
-        len = size(payload, 1)
-        if len >= inf[:length]
-            index = (len - inf[:length])
+        if inBuffer.size >= inf[:length] + inBuffer.ptr -1
             if inf[:opcode] === CONNECTION_CLOSE_FRAME
-                index += 2
-                inf[:closeStatus] = int16(payload[index-1 : index])
+                inf[:closeStatus] = Int(ntoh(read(inBuffer, UInt16)))
             end
-            inf[:binaryPayload] = payload[index + 1:len]
-            inf[:mask] && mask!(inf[:binaryPayload], self.maskBytes)
-
+            inf[:binaryPayload] = read(inBuffer, inf[:length])
+            remainingBytes = inBuffer.size
+            inf[:mask] && mask!(maskBytes, inf[:binaryPayload])
             inf[:parseState] = COMPLETE
             return true
         end

@@ -1,8 +1,7 @@
 const defaultConfig = (
     # 1MiB max frame size.
     maxReceivedFrameSize = 0x100000,
-    # 8MiB max message size, only applicable if
-    # assembleFragments is true
+    # 8MiB max assembled message size
     maxReceivedMessageSize = 0x800000,
     # Outgoing messages larger than fragmentationThreshold will be
     # split into multiple fragments.
@@ -10,14 +9,6 @@ const defaultConfig = (
     # Outgoing frames are fragmented if they exceed this threshold.
     # Default is 16KiB
     fragmentationThreshold = 0x4000,
-    # If true, fragmented messages will be automatically assembled
-    # and the full message will be emitted via a 'message' event.
-    # If false, each frame will be emitted via a 'frame' event and
-    # the application will be responsible for aggregating multiple
-    # fragmented frames.  Single-frame messages will emit a 'message'
-    # event in addition to the 'frame' event.
-    # Most users will want to leave this set to 'true'
-    assembleFragments = true,
     # The number of seconds to wait after sending a close frame
     # for an acknowledgement to come back before giving up and just
     # closing the socket.
@@ -27,7 +18,7 @@ const defaultConfig = (
     #multiple messages can be batched together before going onto the
     #wire.  This however comes at the cost of latency, so the default
     #is to disable it.  If you don't need low latency and are streaming
-    #lots of small messages, you can change this to 'false'
+    #lots of small messages, you can change this to 'true'
     useNagleAlgorithm = false,
 )
 const defaultHeaders = Dict{String, String}(
