@@ -32,7 +32,6 @@ function toBuffer(self::WebsocketFrame)
     truncate(outBuffer, 0)
     maskBytes = self.buffers.maskBytes
     inf = self.inf
-
     firstByte = 0x00
     secondByte = 0x00
     inf[:fin] && (firstByte |= 0x80)
@@ -63,7 +62,7 @@ function toBuffer(self::WebsocketFrame)
 
     if inf[:mask]
         seekstart(maskBytes)
-        write(maskBytes, hton(0x6eaeb364))
+        write(maskBytes, hton(rand(UInt32)))
         seekstart(maskBytes)
         write(outBuffer, maskBytes)
         mask!(maskBytes, inf[:binaryPayload])
@@ -76,13 +75,13 @@ function toBuffer(self::WebsocketFrame)
 end
 
 function addData(self::WebsocketFrame)
-
+    
     inf = self.inf
     header = self.buffers.frameHeader
     inBuffer = self.buffers.inBuffer
     maskBytes = self.buffers.maskBytes
 
-    if inf[:parseState] === DECODE_HEADER && inBuffer.size >= 2
+    if inf[:parseState] === DECODE_HEADER && inBuffer.size >= 2       
         seekstart(header)
         write(header, read(inBuffer, 2))
         firstByte = header.data[1]
@@ -95,11 +94,9 @@ function addData(self::WebsocketFrame)
         inf[:rsv2] = firstByte & WS_RSV2 > 0
         inf[:rsv3] = firstByte & WS_RSV3 > 0
 
-        
-
         if inf[:opcode] >= 0x08
-            inf[:length] > 125 && throw(WebsocketError("illegal control frame longer than 125 bytes."))
-            !inf[:fin] && throw(WebsocketError("control frames must not be fragmented."))
+            inf[:length] > 125 && throw(error("illegal control frame longer than 125 bytes."))
+            !inf[:fin] && throw(error("control frames must not be fragmented."))
         end
 
         
@@ -146,12 +143,11 @@ function addData(self::WebsocketFrame)
 
     end
     if inf[:parseState] === WAITING_FOR_PAYLOAD
-        if inBuffer.size >= inf[:length] + inBuffer.ptr -1
+        if inBuffer.size >= inf[:length] + (inBuffer.ptr - header.size - 1)
             if inf[:opcode] === CONNECTION_CLOSE_FRAME
                 inf[:closeStatus] = Int(ntoh(read(inBuffer, UInt16)))
             end
             inf[:binaryPayload] = read(inBuffer, inf[:length])
-            remainingBytes = inBuffer.size
             inf[:mask] && mask!(maskBytes, inf[:binaryPayload])
             inf[:parseState] = COMPLETE
             return true

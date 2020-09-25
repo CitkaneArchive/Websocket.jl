@@ -1,6 +1,41 @@
-struct WebsocketError <: Exception
-    msg::String
+function errorConstructor(err::Exception, trace)
+
 end
+
+abstract type WebsocketError <: Exception end
+msg(err::Exception) = (hasfield(typeof(err), :msg) ? err.msg : string(typeof(err)))
+logError(self::Exception, err::Exception, trace::Array) = @error string(typeof(self))*"(\"$(self.msg)\")" exception = (err, trace)
+struct ConnectError <: WebsocketError
+    msg::String
+    log::Function   
+    function ConnectError(err::Exception, trace::Array = [])
+        self = new(
+            msg(err),
+            () -> logError(self, err, trace)
+        )
+    end
+end
+struct CallbackError <: WebsocketError
+    msg::String
+    log::Function   
+    function CallbackError(err::Exception, trace::Array = [])
+        self = new(
+            msg(err),
+            () -> logError(self, err, trace)
+        )
+    end
+end
+struct FrameError <: WebsocketError
+    msg::String
+    log::Function   
+    function FrameError(err::Exception, trace::Array = [])
+        self = new(
+            msg(err),
+            () -> logError(self, err, trace)
+        )
+    end
+end
+
 
 requestHash() = base64encode(rand(UInt8, 16))
 function acceptHash(key::String)

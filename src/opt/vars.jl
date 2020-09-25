@@ -20,6 +20,8 @@ const defaultConfig = (
     #is to disable it.  If you don't need low latency and are streaming
     #lots of small messages, you can change this to 'true'
     useNagleAlgorithm = false,
+    #use binary Arrays instead of String as messaging format
+    binary = false
 )
 const defaultHeaders = Dict{String, String}(
     "Sec-WebSocket-Version" => "13",
