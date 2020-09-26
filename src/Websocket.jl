@@ -6,7 +6,7 @@ include("opt/vars.jl")
 include("opt/utils.jl")
 include("lib/WebsocketClient.jl")
 
-export WebsocketClient, listen, send, logWSerror
+export WebsocketClient, listen, send, logWSerror, ping
 
 function Base.open(client::WebsocketClient, url::String, headers::Dict{String, String} = Dict{String, String}();kwargs...)
     makeConnection(client, url, headers; kwargs...)
@@ -14,8 +14,8 @@ end
 function Base.isopen(client::WebsocketClient)
     client.flags[:isopen]
 end
-function Base.close(ws::WebsocketConnection, reasonCode::Int = CLOSE_REASON_NORMAL)
-    closeConnection(ws, reasonCode)
+function Base.close(ws::WebsocketConnection, reasonCode::Int = CLOSE_REASON_NORMAL, description::String = "")
+    closeConnection(ws, reasonCode, description)
 end
 function logWSerror(err::WebsocketError)
     err.log()

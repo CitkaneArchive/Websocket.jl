@@ -1,5 +1,5 @@
 include("WebsocketFrame.jl")
-const ioTypes = Union{Nothing, WebsocketFrame, HTTP.ConnectionPool.Transaction, Timer, NamedTuple}
+const ioTypes = Union{Nothing, WebsocketFrame, HTTP.ConnectionPool.Transaction, Timer, Closereason}
 
 struct WebsocketConnection
     config::NamedTuple
@@ -7,7 +7,6 @@ struct WebsocketConnection
     callbacks::Dict{Symbol, Union{Bool, Function}}
     buffers::NamedTuple
     closed::Condition
-    ping::Function
 
     function WebsocketConnection(config::NamedTuple)
         @debug "WebsocketConnection"
@@ -20,7 +19,7 @@ struct WebsocketConnection
         )
         atexit(() -> (
             if isopen(self.io[:stream])
-                closeConnection(self, CLOSE_REASON_ABNORMAL)
+                closeConnection(self, CLOSE_REASON_ABNORMAL, "julia process exited.")
                 wait(self.closed)
                 sleep(0.001)
             end
@@ -54,7 +53,6 @@ struct WebsocketConnection
             ),
             buffers,                                                    #buffers
             Condition(),                                                #closed
-            data::Union{String, Number} -> ping(self, data)             #ping
         )
     end
 end
@@ -121,12 +119,14 @@ function connect(
                 notify(connected, err; error = true)
                 return
             end
+
             while !eof(io)
-                data = readavailable(io)
-                @async try
+                data = readavailable(io)               
+                try
                     seekend(self.buffers.inBuffer)
                     unsafe_write(self.buffers.inBuffer, pointer(data), length(data))
-                    handleSocketData(self)
+                    processReceivedData(self)
+                    
                 catch err
                     err = FrameError(err, catch_backtrace())
                     if self.callbacks[:error] isa Function
@@ -134,33 +134,31 @@ function connect(
                     else
                         err.log()   
                     end
-                    closeConnection(self, CLOSE_REASON_INVALID_DATA)
+                    closeConnection(self, CLOSE_REASON_INVALID_DATA, err.msg)
+                    close(self.io[:stream])
+                    break
                 end
             end
+            
             @async begin
-                isopen(self.io[:closeTimeout]) && sleep(0.001)
+                (   self.io[:closeTimeout] !== nothing &&
+                    isopen(self.io[:closeTimeout]) 
+                ) && sleep(0.001)
+                
                 if self.io[:closeReason] === nothing
-                    self.io[:closeReason] = (;
-                        code = CLOSE_REASON_ABNORMAL,
-                        description = CLOSE_DESCRIPTIONS[CLOSE_REASON_ABNORMAL]
-                    )
+                    self.io[:closeReason] = Closereason(CLOSE_REASON_ABNORMAL)
                 end
                 notify(self.closed, self.io[:closeReason]; all = true)
             end
         end
     end
 end
-function closeConnection(self::WebsocketConnection, reasonCode::Int)
-    
-    if !haskey(CLOSE_DESCRIPTIONS, reasonCode)
-        @warn "invalid websocket close reason code: $(reasonCode)."
-        reasonCode = CLOSE_REASON_NOT_PROVIDED
-    end
-    nowire = [
-        CLOSE_REASON_NOT_PROVIDED,
-        CLOSE_REASON_ABNORMAL
-    ]
-    if !(reasonCode in nowire) && isopen(self.io[:stream])
+function closeConnection(self::WebsocketConnection, reasonCode::Int, reason::String)
+    closereason = Closereason(reasonCode, reason)
+    !closereason.valid && throw(error("invalid connection close code."))
+
+    self.io[:closeReason] = closereason
+    if isopen(self.io[:stream])
         sendCloseFrame(self, reasonCode)
         self.io[:closeTimeout] = Timer(timer -> (
             try
@@ -169,20 +167,17 @@ function closeConnection(self::WebsocketConnection, reasonCode::Int)
             end
         ), self.config.closeTimeout)
     else
-        self.io[:closeReason] = (;
-            code = reasonCode,
-            description = CLOSE_DESCRIPTIONS[reasonCode],
-        )
         isopen(self.io[:stream]) && close(self.io[:stream])
     end
 end
 
 # Send data
 send(self::WebsocketConnection, data::Number) = send(self, string(data))
-function send(self::WebsocketConnection, data::String)
+send(self::WebsocketConnection, data::String) = send(self, textbuffer(data))
+function send(self::WebsocketConnection, data::Array{UInt8,1})
     @debug "WebsocketConnection.send"
     try
-        frame = WebsocketFrame(self.config, self.buffers, textbuffer(data))
+        frame = WebsocketFrame(self.config, self.buffers, data)
         frame.inf[:opcode] = self.config.binary ? BINARY_FRAME : TEXT_FRAME
         fragmentAndSend(self, frame)
     catch err
@@ -203,7 +198,8 @@ function sendCloseFrame(self::WebsocketConnection, reasonCode::Int)
     frame.inf[:closeStatus] = reasonCode
     sendFrame(self, frame)
 end
-function ping(self::WebsocketConnection, data::Union{String, Number})
+ping(self::WebsocketConnection, data::Number) = ping(self, String(data))
+function ping(self::WebsocketConnection, data::String)
     try
         data = textbuffer(data)
         size(data, 1) > 125 && (data = data[1:125, 1])
@@ -276,25 +272,35 @@ end
 # End send data
 
 # Receive data
-function handleSocketData(self::WebsocketConnection)
-    seekstart(self.buffers.inBuffer)
-    processReceivedData(self)
-end
-
 function processReceivedData(self::WebsocketConnection)
     frame = self.io[:currentFrame]
-    continued = false
-    brakes = @async begin
-        continued = addData(frame)
-    end
-    wait(brakes)
-    !continued && return
-    processFrame(self, frame)
-    self.io[:currentFrame] = WebsocketFrame(self.config, self.buffers)
     inBuffer = self.buffers.inBuffer
-    if inBuffer.ptr < inBuffer.size       
+
+    continued = addData(frame)
+
+    @debug "processRecievedData" (;
+        continued = continued,
+        ptr = inBuffer.ptr,
+        buffersize = inBuffer.size,
+        parseState = frame.inf[:parseState],
+        opcode = frame.inf[:opcode],
+        length = frame.inf[:length],
+        fin = frame.inf[:fin]
+    )...
+
+    !continued && return
+
+    processFrame(self, frame)
+    self.io[:currentFrame] = WebsocketFrame(
+        self.config,
+        self.buffers;
+            ptr = frame.inf[:ptr]
+    )
+
+    if (inBuffer.ptr - 1) < inBuffer.size     
         processReceivedData(self)
     else
+        self.io[:currentFrame].inf[:ptr] = 1
         isopen(inBuffer) && truncate(inBuffer, 0)
     end
 end
@@ -304,17 +310,20 @@ function processFrame(self::WebsocketConnection, frame::WebsocketFrame)
     opcode = inf[:opcode]
     fragmentBuffer = self.buffers.fragmentBuffer
     binary = self.config.binary
-    if opcode === TEXT_FRAME || opcode === BINARY_FRAME
-        data = inf[:binaryPayload]
-        
+    data = inf[:binaryPayload]
+    if fragmentBuffer.size > 0 && (opcode > 0x00 && opcode < 0x08)
+        throw(error("illegal frame opcode $opcode received in middle of fragmented message."))
+    end
+
+    if opcode === TEXT_FRAME || opcode === BINARY_FRAME       
         if frame.inf[:fin]
             callback = self.callbacks[:message]
             callback isa Function && callback(binary ? data : String(data))
         else
-            write(fragmentBuffer, data)
+            unsafe_write(fragmentBuffer, pointer(data), length(data))
         end
     elseif opcode === CONTINUATION_FRAME
-        write(fragmentBuffer, frame.inf[:binaryPayload])
+        unsafe_write(fragmentBuffer, pointer(data), length(data))
         if inf[:fin] 
             seekstart(fragmentBuffer)
             data = binary ? read(fragmentBuffer) : read(fragmentBuffer, String)
@@ -332,23 +341,21 @@ function processFrame(self::WebsocketConnection, frame::WebsocketFrame)
         end
     elseif opcode === CONNECTION_CLOSE_FRAME
         description = String(inf[:binaryPayload])
+        
         if length(description) === 0
+            
             if haskey(CLOSE_DESCRIPTIONS, inf[:closeStatus])
                 description = CLOSE_DESCRIPTIONS[inf[:closeStatus]]
             else 
                 description = "Unknown close code"
             end
         end
-        self.io[:closeReason] = (;
-            code = inf[:closeStatus],
-            description = description,
-        )
+        
+        self.io[:closeReason] = Closereason(inf[:closeStatus], description)
         if self.io[:closeTimeout] isa Timer && isopen(self.io[:closeTimeout])
             close(self.io[:closeTimeout])
         end
         isopen(self.io[:stream]) && close(self.io[:stream])
-    else
-
     end
 end
 # End receive data
