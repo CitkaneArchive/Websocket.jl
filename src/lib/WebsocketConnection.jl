@@ -7,6 +7,7 @@ struct WebsocketConnection
     callbacks::Dict{Symbol, Union{Bool, Function}}
     buffers::NamedTuple
     closed::Condition
+    keepalive::Dict{Symbol, Union{String, Bool}}
 
     function WebsocketConnection(config::NamedTuple)
         @debug "WebsocketConnection"
@@ -17,13 +18,35 @@ struct WebsocketConnection
             inBuffer = IOBuffer(; maxsize = Int(config.maxReceivedFrameSize)),
             fragmentBuffer = IOBuffer(; maxsize = Int(config.maxReceivedMessageSize))
         )
-        atexit(() -> (
-            if isopen(self.io[:stream])
-                closeConnection(self, CLOSE_REASON_ABNORMAL, "julia process exited.")
-                wait(self.closed)
-                sleep(0.001)
+
+        initmessage = "keepalive-"*string(rand(UInt32))
+        keepalive = Dict{Symbol, Union{String, Bool}}(
+            :pingmessage => initmessage,
+            :pongmessage => initmessage,
+            :isopen => true,
+            :isalive => true,
+        )
+        interval = config.keepaliveTimeout
+        keepaliveTimer = Timer(timer -> (
+            try
+                if !keepalive[:isopen]
+                    close(timer)
+                    return
+                end
+                if keepalive[:pingmessage] !== keepalive[:pongmessage]
+                    self.io[:closeReason] = Closereason(CLOSE_REASON_ABNORMAL, "could not ping the $(config.type === "client" ? "server" : "client").")
+                    close(self.io[:stream])
+                    gracefulEnd(self)
+                    close(timer) 
+                elseif !keepalive[:isalive]
+                    keepalive[:pingmessage] = "keepalive-"*string(rand(UInt32))
+                    ping(self, keepalive[:pingmessage])
+                end
+                keepalive[:isalive] = false
+            catch
             end
-        ))
+        ), interval; interval = interval)
+
         @async begin
             reason = wait(self.closed)
             for buffer in collect(self.buffers)
@@ -36,6 +59,15 @@ struct WebsocketConnection
                 @warn "websocket connection closed." reason...
             end
         end
+
+        atexit(() -> (
+            if isopen(self.io[:stream])
+                self.io[:closeReason] = closeReason(CLOSE_REASON_ABNORMAL, "julia process exited.")
+                close(self.io[:stream])
+                wait(self.closed)
+                sleep(0.001)
+            end
+        ))
 
         self = new(
             config,                                                     #config
@@ -53,6 +85,7 @@ struct WebsocketConnection
             ),
             buffers,                                                    #buffers
             Condition(),                                                #closed
+            keepalive                                                   #keepalive
         )
     end
 end
@@ -91,6 +124,19 @@ function validateHandshake(headers::Dict{String, String}, request::HTTP.Messages
         throw(error("""invalid "Sec-WebSocket-Accept" response from server"""))
     end
 end
+function gracefulEnd(self::WebsocketConnection)
+    self.keepalive[:isopen] = false
+    @async begin
+        (   self.io[:closeTimeout] !== nothing &&
+            isopen(self.io[:closeTimeout])
+        ) && sleep(0.001)
+
+        if self.io[:closeReason] === nothing
+            self.io[:closeReason] = Closereason(CLOSE_REASON_ABNORMAL)
+        end
+        notify(self.closed, self.io[:closeReason]; all = true)
+    end
+end
 
 function connect(
     config::NamedTuple,
@@ -119,45 +165,34 @@ function connect(
                 notify(connected, err; error = true)
                 return
             end
-
             while !eof(io)
-                data = readavailable(io)               
-                try
+                data = readavailable(io)
+                isopen(self.io[:stream]) && try
                     seekend(self.buffers.inBuffer)
                     unsafe_write(self.buffers.inBuffer, pointer(data), length(data))
                     processReceivedData(self)
-                    
+
                 catch err
                     err = FrameError(err, catch_backtrace())
                     if self.callbacks[:error] isa Function
                         self.callbacks[:error](err)
                     else
-                        err.log()   
+                        err.log()
                     end
                     closeConnection(self, CLOSE_REASON_INVALID_DATA, err.msg)
                     close(self.io[:stream])
                     break
                 end
             end
-            
-            @async begin
-                (   self.io[:closeTimeout] !== nothing &&
-                    isopen(self.io[:closeTimeout]) 
-                ) && sleep(0.001)
-                
-                if self.io[:closeReason] === nothing
-                    self.io[:closeReason] = Closereason(CLOSE_REASON_ABNORMAL)
-                end
-                notify(self.closed, self.io[:closeReason]; all = true)
-            end
+            self.keepalive[:isopen] && gracefulEnd(self)
         end
     end
 end
 function closeConnection(self::WebsocketConnection, reasonCode::Int, reason::String)
-    closereason = Closereason(reasonCode, reason)
+    closereason = Closereason(reasonCode, reason)   
+    self.io[:closeReason] = closereason
     !closereason.valid && throw(error("invalid connection close code."))
 
-    self.io[:closeReason] = closereason
     if isopen(self.io[:stream])
         sendCloseFrame(self, reasonCode)
         self.io[:closeTimeout] = Timer(timer -> (
@@ -297,7 +332,7 @@ function processReceivedData(self::WebsocketConnection)
             ptr = frame.inf[:ptr]
     )
 
-    if (inBuffer.ptr - 1) < inBuffer.size     
+    if (inBuffer.ptr - 1) < inBuffer.size
         processReceivedData(self)
     else
         self.io[:currentFrame].inf[:ptr] = 1
@@ -314,8 +349,8 @@ function processFrame(self::WebsocketConnection, frame::WebsocketFrame)
     if fragmentBuffer.size > 0 && (opcode > 0x00 && opcode < 0x08)
         throw(error("illegal frame opcode $opcode received in middle of fragmented message."))
     end
-
-    if opcode === TEXT_FRAME || opcode === BINARY_FRAME       
+    self.keepalive[:isalive] = true
+    if opcode === TEXT_FRAME || opcode === BINARY_FRAME
         if frame.inf[:fin]
             callback = self.callbacks[:message]
             callback isa Function && callback(binary ? data : String(data))
@@ -324,34 +359,32 @@ function processFrame(self::WebsocketConnection, frame::WebsocketFrame)
         end
     elseif opcode === CONTINUATION_FRAME
         unsafe_write(fragmentBuffer, pointer(data), length(data))
-        if inf[:fin] 
+        if inf[:fin]
             seekstart(fragmentBuffer)
             data = binary ? read(fragmentBuffer) : read(fragmentBuffer, String)
             isopen(fragmentBuffer) && truncate(fragmentBuffer, 0)
             callback = self.callbacks[:message]
-            callback isa Function && callback(data)           
+            callback isa Function && callback(data)
         end
-        
+
     elseif opcode === PING_FRAME
         pong(self, inf[:binaryPayload])
     elseif opcode === PONG_FRAME
         callback = self.callbacks[:pong]
-        if callback isa Function
-            callback(binary ? frame.inf[:binaryPayload] : String(frame.inf[:binaryPayload]))
+        message = String(frame.inf[:binaryPayload])
+
+        if message === self.keepalive[:pingmessage]
+            self.keepalive[:pongmessage] = message
+        elseif callback isa Function
+            callback(binary ? textbuffer(message) : message)
         end
     elseif opcode === CONNECTION_CLOSE_FRAME
         description = String(inf[:binaryPayload])
-        
-        if length(description) === 0
-            
-            if haskey(CLOSE_DESCRIPTIONS, inf[:closeStatus])
-                description = CLOSE_DESCRIPTIONS[inf[:closeStatus]]
-            else 
-                description = "Unknown close code"
-            end
-        end
-        
         self.io[:closeReason] = Closereason(inf[:closeStatus], description)
+        if !self.io[:closeReason].valid
+            @warn "received invalid close reason" code = inf[:closeStatus] description = description
+            self.io[:closeReason] = Closereason(CLOSE_REASON_NOT_PROVIDED, description)
+        end
         if self.io[:closeTimeout] isa Timer && isopen(self.io[:closeTimeout])
             close(self.io[:closeTimeout])
         end
