@@ -154,15 +154,17 @@ function addData(self::WebsocketFrame)
     if inf[:parseState] === WAITING_FOR_PAYLOAD
         if inBuffer.size - (inf[:ptr] - 1) >= inf[:length]
 
-            if inf[:opcode] === CONNECTION_CLOSE_FRAME
-                inf[:length] < 2 && throw(error("close frame too small"))
-                inf[:closeStatus] = Int(ntoh(read(inBuffer, UInt16)))
-                inf[:ptr] = inBuffer.ptr
-            end
-
             inf[:binaryPayload] = read(inBuffer, inf[:length])
             inf[:ptr] = inBuffer.ptr
             inf[:mask] && mask!(maskBytes, inf[:binaryPayload])
+
+            if inf[:opcode] === CONNECTION_CLOSE_FRAME
+                inf[:length] < 2 && throw(error("close frame too small"))
+                status = IOBuffer(splice!(inf[:binaryPayload], 1:2))
+                inf[:closeStatus] = Int(ntoh(read(status, UInt16)))
+                close(status)
+            end
+
             inf[:parseState] = COMPLETE
             
             return true

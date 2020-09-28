@@ -105,8 +105,6 @@ function makeHeaders(extend::Dict{String, String})
     headers
 end
 
-
-
 function explain(object::Any)
     type = typeof(object)
     @show type

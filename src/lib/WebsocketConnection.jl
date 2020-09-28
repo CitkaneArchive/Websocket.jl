@@ -37,7 +37,7 @@ struct WebsocketConnection
                     self.io[:closeReason] = Closereason(CLOSE_REASON_ABNORMAL, "could not ping the $(config.type === "client" ? "server" : "client").")
                     close(self.io[:stream])
                     gracefulEnd(self)
-                    close(timer) 
+                    close(timer)
                 elseif !keepalive[:isalive]
                     keepalive[:pingmessage] = "keepalive-"*string(rand(UInt32))
                     ping(self, keepalive[:pingmessage])
@@ -56,7 +56,7 @@ struct WebsocketConnection
             if callback isa Function
                 callback(reason)
             else
-                @warn "websocket connection closed." reason...
+                @warn "$(self.config.type) websocket connection closed." code = reason.code description = reason.description
             end
         end
 
@@ -110,20 +110,29 @@ function listen(
     end
 end
 
-function validateHandshake(headers::Dict{String, String}, request::HTTP.Messages.Response)
-    if request.status != 101
-        throw(error("connection error with status: $(request.status)"))
+function startConnection(self::WebsocketConnection, io::HTTP.Streams.Stream)
+    handle = gethandles(self, io)
+    while !eof(handle.file)
+        data = readavailable(handle.available)
+        isopen(self.io[:stream]) && try
+            seekend(self.buffers.inBuffer)
+            unsafe_write(self.buffers.inBuffer, pointer(data), length(data))
+            processReceivedData(self)
+        catch err
+            err = FrameError(err, catch_backtrace())
+            if self.callbacks[:error] isa Function
+                self.callbacks[:error](err)
+            else
+                err.log()
+            end
+            closeConnection(self, CLOSE_REASON_INVALID_DATA, err.msg)
+            close(self.io[:stream])
+            break
+        end
     end
-    if !HTTP.hasheader(request, "Connection", "Upgrade")
-        throw(error("""did not receive "Connection: Upgrade" """))
-    end
-    if !HTTP.hasheader(request, "Upgrade", "websocket")
-        throw(error("""did not receive "Upgrade: websocket" """))
-    end
-    if !HTTP.hasheader(request, "Sec-WebSocket-Accept", acceptHash(headers["Sec-WebSocket-Key"]))
-        throw(error("""invalid "Sec-WebSocket-Accept" response from server"""))
-    end
+    self.keepalive[:isopen] && gracefulEnd(self)
 end
+
 function gracefulEnd(self::WebsocketConnection)
     self.keepalive[:isopen] = false
     @async begin
@@ -138,58 +147,9 @@ function gracefulEnd(self::WebsocketConnection)
     end
 end
 
-function connect(
-    config::NamedTuple,
-    url::String,
-    connected::Condition,
-    headers::Dict{String, String};
-        options...
-)
-    @debug "WebsocketConnection.connect"
-    let self
-        HTTP.open("GET", url, headers;
-            options...
-        ) do io
-            if io.stream.c.io isa TCPSocket
-                Sockets.nagle(io.stream.c.io, config.useNagleAlgorithm)
-            else
-                Sockets.nagle(io.stream.c.io.bio, config.useNagleAlgorithm)
-            end
-            try
-                request = startread(io)
-                validateHandshake(headers, request)
-                self = WebsocketConnection(config)
-                self.io[:stream] = io.stream
-                notify(connected, self)
-            catch err
-                notify(connected, err; error = true)
-                return
-            end
-            while !eof(io)
-                data = readavailable(io)
-                isopen(self.io[:stream]) && try
-                    seekend(self.buffers.inBuffer)
-                    unsafe_write(self.buffers.inBuffer, pointer(data), length(data))
-                    processReceivedData(self)
 
-                catch err
-                    err = FrameError(err, catch_backtrace())
-                    if self.callbacks[:error] isa Function
-                        self.callbacks[:error](err)
-                    else
-                        err.log()
-                    end
-                    closeConnection(self, CLOSE_REASON_INVALID_DATA, err.msg)
-                    close(self.io[:stream])
-                    break
-                end
-            end
-            self.keepalive[:isopen] && gracefulEnd(self)
-        end
-    end
-end
 function closeConnection(self::WebsocketConnection, reasonCode::Int, reason::String)
-    closereason = Closereason(reasonCode, reason)   
+    closereason = Closereason(reasonCode, reason)
     self.io[:closeReason] = closereason
     !closereason.valid && throw(error("invalid connection close code."))
 
@@ -392,5 +352,20 @@ function processFrame(self::WebsocketConnection, frame::WebsocketFrame)
     end
 end
 # End receive data
+
+function gethandles(connection::WebsocketConnection, io::HTTP.Streams.Stream)
+    if connection.config.type === "client"
+        (;
+            file = io,
+            available = io,
+        )
+    else
+        (;
+            file = io.stream,
+            available = io.stream.c.io
+        )
+    end
+end
+
 
 

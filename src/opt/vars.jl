@@ -62,9 +62,12 @@ const defaultHeaders = Dict{String, String}(
     "Sec-WebSocket-Key" => "constructed later",
 )
 const clientOptions = (;
-    reuse_limit=0,
+    reuse_limit = 0,
 )
-const serverOptions = namedTuple()
+const serverOptions = (;
+    stream = true,
+    verbose = true,
+)
 
 const CONTINUATION_FRAME = 0x00
 const TEXT_FRAME = 0x01

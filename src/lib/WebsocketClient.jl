@@ -5,7 +5,7 @@ struct WebsocketClient
 
     function WebsocketClient(; config...)
         @debug "WebsocketClient"
-        config = merge(clientConfig, (; config...), (; maskOutgoingPackets = true))
+        config = merge(clientConfig, (; config...), (; maskOutgoingPackets = true, type = "client"))
         self = new(
             config,
             Dict{Symbol, Union{Bool, Function}}(
@@ -17,10 +17,7 @@ struct WebsocketClient
             )
         )
     end
-
 end
-
-include("WebsocketConnection.jl")
 
 function listen(
     self::WebsocketClient,
@@ -46,14 +43,12 @@ function makeConnection(
     headers::Dict{String, String};
         options...
 )
-    @debug "WebsocketClient.connect"
-    options = merge((; options...), clientOptions)
+    @debug "WebsocketClient.connect"   
     if isopen(self)
-        @error WebsocketError(
-            """called "connect" on a WebsocketClient that is open or opening."""
-        )
+        @warn """called "connect" on a WebsocketClient that is open or opening."""
         return
     end
+    options = merge((; options...), clientOptions)
     connected = Condition()
     self.flags[:isopen] = true
     @async try
@@ -90,5 +85,49 @@ function makeConnection(
         )
     catch err
         @async notify(connected, err; error = true)
+    end
+end
+
+function validateHandshake(headers::Dict{String, String}, request::HTTP.Messages.Response)
+    if request.status != 101
+        throw(error("connection error with status: $(request.status)"))
+    end
+    if !HTTP.hasheader(request, "Connection", "Upgrade")
+        throw(error("""did not receive "Connection: Upgrade" """))
+    end
+    if !HTTP.hasheader(request, "Upgrade", "websocket")
+        throw(error("""did not receive "Upgrade: websocket" """))
+    end
+    if !HTTP.hasheader(request, "Sec-WebSocket-Accept", acceptHash(headers["Sec-WebSocket-Key"]))
+        throw(error("""invalid "Sec-WebSocket-Accept" response from server"""))
+    end
+end
+
+function connect(
+    config::NamedTuple,
+    url::String,
+    connected::Condition,
+    headers::Dict{String, String};
+        options...
+)
+    @debug "WebsocketClient.connect"
+    let self
+        HTTP.open("GET", url, headers;
+            options...
+        ) do io
+            tcp = io.stream.c.io isa TCPSocket ? io.stream.c.io : io.stream.c.io.bio
+            Sockets.nagle(tcp, config.useNagleAlgorithm)
+            try
+                request = startread(io)
+                validateHandshake(headers, request)
+                self = WebsocketConnection(config)
+                self.io[:stream] = io.stream
+                notify(connected, self)
+            catch err
+                notify(connected, err; error = true)
+                return
+            end
+            startConnection(self, io)
+        end
     end
 end
