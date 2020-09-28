@@ -22,6 +22,10 @@ end
 
 include("WebsocketConnection.jl")
 
-function Base.listen(self::WebsocketServer, host::String = "localhost", port::Int = 8080; )
-
+function Base.listen(self::WebsocketServer, host::String = "localhost", port::Int = 8080; options...)
+    @debug "WebsocketServer.listen"
+    options = merge((; options...), serverOptions)
+    HTTP.listen(host, port; options...) do http
+        explain(http)
+    end
 end
