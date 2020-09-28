@@ -5,7 +5,7 @@ struct WebsocketClient
 
     function WebsocketClient(; config...)
         @debug "WebsocketClient"
-        config = merge(defaultConfig, (; config...), (; maskOutgoingPackets = true))
+        config = merge(clientConfig, (; config...), (; maskOutgoingPackets = true))
         self = new(
             config,
             Dict{Symbol, Union{Bool, Function}}(
