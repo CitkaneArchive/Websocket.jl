@@ -47,7 +47,7 @@ function makeConnection(
         options...
 )
     @debug "WebsocketClient.connect"
-    options = merge((; options...), defaultOptions)
+    options = merge((; options...), clientOptions)
     if isopen(self)
         @error WebsocketError(
             """called "connect" on a WebsocketClient that is open or opening."""

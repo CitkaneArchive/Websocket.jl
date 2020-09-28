@@ -29,9 +29,10 @@ const defaultHeaders = Dict{String, String}(
     "Connection" => "Upgrade",
     "Sec-WebSocket-Key" => "constructed later",
 )
-const defaultOptions = (;
+const clientOptions = (;
     reuse_limit=0,
 )
+const serverOptions = namedTuple()
 
 const CONTINUATION_FRAME = 0x00
 const TEXT_FRAME = 0x01
