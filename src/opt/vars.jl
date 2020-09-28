@@ -1,4 +1,4 @@
-const defaultConfig = (
+const clientConfig = (
     # 1MiB max frame size.
     maxReceivedFrameSize = 0x100000,
     # 8MiB max assembled message size
@@ -13,6 +13,9 @@ const defaultConfig = (
     # for an acknowledgement to come back before giving up and just
     # closing the socket.
     closeTimeout = 5,
+    # The interval in number of seconds to solicit a ping / pong response. 
+    # The connection will closed if no pong is received within the interval. 
+    keepaliveTimeout = 1,
     #The Nagle Algorithm makes more efficient use of network resources
     #by introducing a small delay before sending small packets so that
     #multiple messages can be batched together before going onto the
@@ -31,6 +34,10 @@ const defaultHeaders = Dict{String, String}(
 )
 const defaultOptions = (;
     reuse_limit=0,
+    #connection_limit = 1,
+    #readtimeout = 1,
+    #retry = false,
+    #verbose = 2
 )
 
 const CONTINUATION_FRAME = 0x00

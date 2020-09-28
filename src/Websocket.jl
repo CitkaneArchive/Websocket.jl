@@ -6,7 +6,7 @@ include("opt/vars.jl")
 include("opt/utils.jl")
 include("lib/WebsocketClient.jl")
 
-export WebsocketClient, listen, send, logWSerror, ping
+export WebsocketClient, WebsocketConnection, listen, send, logWSerror, ping
 
 function Base.open(client::WebsocketClient, url::String, headers::Dict{String, String} = Dict{String, String}();kwargs...)
     makeConnection(client, url, headers; kwargs...)
