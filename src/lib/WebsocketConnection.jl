@@ -28,7 +28,11 @@ struct WebsocketConnection
         )
         interval = config.keepaliveTimeout
         keepaliveTimer = Timer(timer -> (
-            begin
+            try
+                if !keepalive[:isopen]
+                    close(timer)
+                    return
+                end
                 if keepalive[:pingmessage] !== keepalive[:pongmessage]
                     self.io[:closeReason] = Closereason(CLOSE_REASON_ABNORMAL, "could not ping the $(config.type === "client" ? "server" : "client").")
                     close(self.io[:stream])
@@ -36,10 +40,10 @@ struct WebsocketConnection
                     close(timer) 
                 elseif !keepalive[:isalive]
                     keepalive[:pingmessage] = "keepalive-"*string(rand(UInt32))
-                    println("------------------------------------------- $(keepalive[:pingmessage])")
                     ping(self, keepalive[:pingmessage])
                 end
                 keepalive[:isalive] = false
+            catch
             end
         ), interval; interval = interval)
 
@@ -370,24 +374,17 @@ function processFrame(self::WebsocketConnection, frame::WebsocketFrame)
         message = String(frame.inf[:binaryPayload])
 
         if message === self.keepalive[:pingmessage]
-            println("++++++++++++++++++++++++++++++++++++++++++++ $message")
             self.keepalive[:pongmessage] = message
         elseif callback isa Function
             callback(binary ? textbuffer(message) : message)
         end
     elseif opcode === CONNECTION_CLOSE_FRAME
         description = String(inf[:binaryPayload])
-
-        if length(description) === 0
-
-            if haskey(CLOSE_DESCRIPTIONS, inf[:closeStatus])
-                description = CLOSE_DESCRIPTIONS[inf[:closeStatus]]
-            else
-                description = "Unknown close code"
-            end
-        end
-
         self.io[:closeReason] = Closereason(inf[:closeStatus], description)
+        if !self.io[:closeReason].valid
+            @warn "received invalid close reason" code = inf[:closeStatus] description = description
+            self.io[:closeReason] = Closereason(CLOSE_REASON_NOT_PROVIDED, description)
+        end
         if self.io[:closeTimeout] isa Timer && isopen(self.io[:closeTimeout])
             close(self.io[:closeTimeout])
         end
