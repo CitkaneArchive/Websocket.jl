@@ -5,7 +5,7 @@ struct WebsocketClient
 
     function WebsocketClient(; config...)
         @debug "WebsocketClient"
-        config = merge(clientConfig, (; config...), (; maskOutgoingPackets = true, type = "client",))
+        config = merge(clientConfig, (; config...), (; maskOutgoingPackets = true))
         self = new(
             config,
             Dict{Symbol, Union{Bool, Function}}(
@@ -44,10 +44,10 @@ function makeConnection(
     self::WebsocketClient,
     urlString::String,
     headers::Dict{String, String};
-        kwargs...
+        options...
 )
     @debug "WebsocketClient.connect"
-    options = merge((; kwargs...), defaultOptions)
+    options = merge((; options...), clientOptions)
     if isopen(self)
         @error WebsocketError(
             """called "connect" on a WebsocketClient that is open or opening."""
