@@ -54,19 +54,17 @@ const serverConfig = (
     #use binary Arrays instead of String as messaging format
     binary = false
 )
+
 const defaultHeaders = Dict{String, String}(
     "Sec-WebSocket-Version" => "13",
     "Upgrade" => "websocket",
     "Connection" => "Upgrade",
     "Sec-WebSocket-Key" => "constructed later",
 )
-const defaultOptions = (;
+const clientOptions = (;
     reuse_limit=0,
-    #connection_limit = 1,
-    #readtimeout = 1,
-    #retry = false,
-    #verbose = 2
 )
+const serverOptions = namedTuple()
 
 const CONTINUATION_FRAME = 0x00
 const TEXT_FRAME = 0x01
@@ -127,4 +125,5 @@ const STATE_PEER_REQUESTED_CLOSE = "peer_requested_close"
 const STATE_ENDING = "ending"
 # Connection is fully closed.  No further data can be sent or received.
 const STATE_CLOSED = "closed"
+
 
