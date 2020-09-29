@@ -15,7 +15,7 @@ listen(server, :connectError, err -> (
     end    
 ))
 
-listen(server, :connect, ws -> (
+listen(server, :client, ws -> (
     begin
         broadcast(ws, "A new connection id: $(ws.id) has joined.")
         emit(server, "There are now $(length(server.sockets)) connections on the server.")

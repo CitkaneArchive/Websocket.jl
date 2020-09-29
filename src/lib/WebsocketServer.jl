@@ -10,7 +10,7 @@ struct WebsocketServer
         self = new(
             config,
             Dict{Symbol, Union{Bool, Function}}(
-                :connect => false,
+                :client => false,
                 :connectError => false,
             ),
             Dict{Symbol, Bool}(
@@ -65,8 +65,8 @@ function serve(self::WebsocketServer, port::Int = 8080, host = "localhost"; opti
             tlsconfig = HTTP.Servers.SSLConfig(config.sslcert, config.sslkey)
             options = merge(options, (; sslconfig = tlsconfig))
         end
-        callback = self.callbacks[:connect]
-        callback === false && throw(error("tried to bind the server before registering \":connect\" handler"))
+        callback = self.callbacks[:client]
+        callback === false && throw(error("tried to bind the server before registering \":client\" handler"))
 
         HTTP.listen(host, port; options...) do io
             tcp = io.stream.c.io isa TCPSocket ? io.stream.c.io : io.stream.c.io.bio
