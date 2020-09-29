@@ -2,14 +2,16 @@ include("WebsocketFrame.jl")
 const ioTypes = Union{Nothing, WebsocketFrame, HTTP.ConnectionPool.Transaction, Timer, Closereason}
 
 struct WebsocketConnection
+    id::String
     config::NamedTuple
     io::Dict{Symbol, ioTypes}
     callbacks::Dict{Symbol, Union{Bool, Function}}
     buffers::NamedTuple
     closed::Condition
     keepalive::Dict{Symbol, Union{String, Bool}}
+    sockets::Union{Array{WebsocketConnection,1}, Nothing}
 
-    function WebsocketConnection(config::NamedTuple)
+    function WebsocketConnection(config::NamedTuple, sockets::Union{Array{WebsocketConnection,1}, Nothing} = nothing)
         @debug "WebsocketConnection"
         buffers = (
             maskBytes = IOBuffer(; maxsize = 4),
@@ -49,14 +51,15 @@ struct WebsocketConnection
 
         @async begin
             reason = wait(self.closed)
+            sockets !== nothing && filter!(connection -> (connection.id !== self.id), sockets)   
             for buffer in collect(self.buffers)
                 close(buffer)
             end
             callback = self.callbacks[:close]
             if callback isa Function
                 callback(reason)
-            else
-                @warn "$(self.config.type) websocket connection closed." code = reason.code description = reason.description
+            elseif config.type === "client"
+                @warn "$(config.type) websocket connection closed." code = reason.code description = reason.description
             end
         end
 
@@ -70,6 +73,7 @@ struct WebsocketConnection
         ))
 
         self = new(
+            requestHash(),
             config,                                                     #config
             Dict{Symbol, ioTypes}(                                      #io
                 :stream => nothing,
@@ -85,7 +89,8 @@ struct WebsocketConnection
             ),
             buffers,                                                    #buffers
             Condition(),                                                #closed
-            keepalive                                                   #keepalive
+            keepalive,                                                  #keepalive
+            sockets                                                     #sockets
         )
     end
 end
@@ -110,6 +115,13 @@ function listen(
     end
 end
 
+function gethandles(connection::WebsocketConnection, io::HTTP.Streams.Stream)
+    if connection.config.type === "client"
+        (; file = io, available = io,)
+    else
+        (; file = io.stream, available = io.stream.c.io)
+    end
+end
 function startConnection(self::WebsocketConnection, io::HTTP.Streams.Stream)
     handle = gethandles(self, io)
     while !eof(handle.file)
@@ -353,19 +365,7 @@ function processFrame(self::WebsocketConnection, frame::WebsocketFrame)
 end
 # End receive data
 
-function gethandles(connection::WebsocketConnection, io::HTTP.Streams.Stream)
-    if connection.config.type === "client"
-        (;
-            file = io,
-            available = io,
-        )
-    else
-        (;
-            file = io.stream,
-            available = io.stream.c.io
-        )
-    end
-end
+
 
 
 

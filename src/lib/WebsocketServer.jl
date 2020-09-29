@@ -2,6 +2,7 @@ struct WebsocketServer
     config::NamedTuple
     callbacks::Dict{Symbol, Union{Bool, Function}}
     flags::Dict{Symbol, Bool}
+    sockets::Array{WebsocketConnection, 1}
 
     function WebsocketServer(; config...)
         @debug "WebsocketClient"
@@ -14,7 +15,8 @@ struct WebsocketServer
             ),
             Dict{Symbol, Bool}(
                 :isopen => false
-            )
+            ),
+            []
         )
     end
 
@@ -55,14 +57,18 @@ end
 function Base.bind(self::WebsocketServer, port::Int = 8080, host = "127.0.0.1"; options...)
     @debug "WebsocketServer.listen"
     config = self.config
-    options = merge((; options...), serverOptions)
-    try
+    options = merge(serverOptions, (; options...))    
+    if config.ssl
+        tlsconfig = HTTP.Servers.SSLConfig(config.sslcert, config.sslkey)
+        options = merge(options, (; sslconfig = tlsconfig))
+    end
+    try       
         callback = self.callbacks[:connect]
         callback === false && throw(error("tried to bind the server before registering \":connect\" handler"))
-        HTTP.serve(host, port; options...) do io
+
+        HTTP.listen(host, port; options...) do io
             tcp = io.stream.c.io isa TCPSocket ? io.stream.c.io : io.stream.c.io.bio
             Sockets.nagle(tcp, config.useNagleAlgorithm)
-
             try
                 headers = io.message
                 validateUpgrade(headers)
@@ -73,16 +79,14 @@ function Base.bind(self::WebsocketServer, port::Int = 8080, host = "127.0.0.1"; 
                 HTTP.setheader(io, "Connection" => "Upgrade")
 
                 startwrite(io)
-                try
-                    connection = WebsocketConnection(config)
-                    connection.io[:stream] = io.stream
-                    callback(connection)
-                    startConnection(connection, io)
-                catch err
-                    err = ConnectError(err, catch_backtrace())
-                    err.log()
-                end
+
+                connection = WebsocketConnection(config, self.sockets)
+                connection.io[:stream] = io.stream
+                push!(self.sockets, connection)
+                callback(connection)
+                startConnection(connection, io)
             catch err
+                @error err exception = (err, catch_backtrace())
                 HTTP.setstatus(io, 400)
                 startwrite(io)
             end
@@ -95,5 +99,11 @@ function Base.bind(self::WebsocketServer, port::Int = 8080, host = "127.0.0.1"; 
         else
             err.log()
         end
+    end
+end
+
+function emit(self::WebsocketServer, data::Union{Array{UInt8,1}, String, Number})
+    for connection in self.sockets
+        send(connection, data)
     end
 end

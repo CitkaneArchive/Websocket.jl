@@ -1,3 +1,5 @@
+
+
 const clientConfig = (
     # 1MiB max frame size.
     maxReceivedFrameSize = 1 * 0x100000,
@@ -27,6 +29,9 @@ const clientConfig = (
     binary = false
 )
 const serverConfig = (
+    ssl = false,
+    sslcert = joinpath(dirname(pathof(Websocket)), "etc/snakeoil.crt"),
+    sslkey = joinpath(dirname(pathof(Websocket)), "etc/snakeoil.key"),
     # 1MiB max frame size.
     maxReceivedFrameSize = 0x100000,
     # 8MiB max assembled message size
@@ -65,8 +70,8 @@ const clientOptions = (;
     reuse_limit = 0,
 )
 const serverOptions = (;
-    stream = true,
-    verbose = true,
+    sslconfig = nothing,
+    verbose = false
 )
 
 const CONTINUATION_FRAME = 0x00
