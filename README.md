@@ -1,58 +1,99 @@
 # Websocket
 
-```julia
-using Websocket
-
-client = WebsocketClient()
-client.on(:connect, connectCb)
-
-# Callback functions
-function connectCb(ws)
-    ws.on(:message, messageCb)
-    ws.send("hello world")
-end
-function messageCb(message)
-    @show message
-end
-# end Callback functions
-
-#=
-Non blocking application code goes here
-=#
-
-client.connect("wss://echo.websocket.org") # blocks until HTTP connection closes
-```
-Or stated differently
+## Basic usage server:
 
 ```julia
 using Websocket
+ended = Condition() 
 
-client = WebsocketClient()
+server = WebsocketServer(; ssl = true)
 
-client.on(:connect, ws -> (
-
-    ws.on(:message, message -> (
-        @show message
-    ));
-    ws.send("hello world")
-    
+listen(server, :connectError, err -> (
+    begin
+        logWSerror(err)
+        notify(ended, err.msg, error = true)
+    end    
 ))
 
-@async try
-    client.connect("wss://echo.websocket.org")
-catch err
-    @error "Fatal error in websocket" exception = (err, catch_backtrace())
-    exit()
-end
+listen(server, :connect, ws -> (
+    begin
+        broadcast(ws, "A new connection id: $(ws.id) has joined.")
+        emit(server, "There are now $(length(server.sockets)) connections on the server.")
+        
+        listen(ws, :message, message -> (
+            begin
+                @info "Got a message" socket = ws.id message = message
+                send(ws, "Echo back at you: $message")
+            end
+        ))
 
-#=
-Application code goes here
-=#
+        listen(ws, :close, reason -> (
+            begin
+                broadcast(ws, "$(ws.id) left the building because: $(reason.description)")
+                emit(server, "There are now $(length(server.sockets)) connections on the server.")
+            end
+        ))
+    end
+))
+
+@async serve(server, 8080, "localhost"; verbose = true)
+wait(ended)
 ```
-## Custom options
+## Basic usage client:
+
 ```julia
+using Websocket
+ended = Condition()
 
-client.connect(url::String, [customHeaders::Dict{String, String}; kwargs...])
+url = "wss://localhost:8080"
+client = WebsocketClient()
 
+listen(client, :connectError, err -> (
+    begin
+        logWSerror(err)
+        notify(ended, err.msg, error = true)
+    end    
+))
+
+listen(client, :connect, ws -> (
+    begin
+        println("Websocket client connected to $url")
+
+        ping(ws, "Hello world!")
+
+        listen(ws, :error, err -> (
+            logWSerror(err)
+        ))
+
+        listen(ws, :message, message -> (
+            @info message
+        ))
+
+        listen(ws, :pong, message -> (
+            @info "Received a PONG" message = message
+        ))
+
+        listen(ws, :close, reason -> (
+            begin
+                @warn "Websocket connection is $(isopen(client) ? "OPEN" : "CLOSED")." (;
+                    code = reason.code,
+                    description = reason.description,
+                )...
+                notify(ended)
+            end
+        ))
+
+        count = 0
+        Timer(timer -> (
+            begin
+                count += 1
+                send(ws, "hello $count")
+                count > 10 && close(ws)
+            end
+        ), 0; interval = 5)
+    end
+))
+
+@async open(client, url; require_ssl_verification = false)
+wait(ended)
 ```
-Where `kwargs` are [HTTP request](https://juliaweb.github.io/HTTP.jl/stable/public_interface/#Requests-1) options.

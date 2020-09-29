@@ -54,15 +54,17 @@ function validateUpgrade(headers::HTTP.Messages.Request)
     end
 end
 
-function Base.bind(self::WebsocketServer, port::Int = 8080, host = "127.0.0.1"; options...)
+function serve(self::WebsocketServer, port::Int = 8080, host = "localhost"; options...)
     @debug "WebsocketServer.listen"
     config = self.config
-    options = merge(serverOptions, (; options...))    
-    if config.ssl
-        tlsconfig = HTTP.Servers.SSLConfig(config.sslcert, config.sslkey)
-        options = merge(options, (; sslconfig = tlsconfig))
-    end
-    try       
+    options = merge(serverOptions, (; options...))
+
+    try
+        host = getaddrinfo(host)
+        if config.ssl
+            tlsconfig = HTTP.Servers.SSLConfig(config.sslcert, config.sslkey)
+            options = merge(options, (; sslconfig = tlsconfig))
+        end
         callback = self.callbacks[:connect]
         callback === false && throw(error("tried to bind the server before registering \":connect\" handler"))
 

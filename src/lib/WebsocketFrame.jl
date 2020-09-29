@@ -152,8 +152,8 @@ function addData(self::WebsocketFrame)
         end
     end
     if inf[:parseState] === WAITING_FOR_PAYLOAD
+        inf[:length] > self.config.maxReceivedFrameSize && throw(error("frame size exceeds maximum"))
         if inBuffer.size - (inf[:ptr] - 1) >= inf[:length]
-
             inf[:binaryPayload] = read(inBuffer, inf[:length])
             inf[:ptr] = inBuffer.ptr
             inf[:mask] && mask!(maskBytes, inf[:binaryPayload])

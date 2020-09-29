@@ -1,7 +1,7 @@
 module Websocket
 using HTTP, Base64, Sockets, MbedTLS
 
-export WebsocketServer, WebsocketClient, WebsocketConnection, listen, send, emit, logWSerror, ping
+export WebsocketServer, WebsocketClient, WebsocketConnection, listen, serve, send, emit, logWSerror, ping
 
 include("opt/vars.jl")
 include("opt/utils.jl")

@@ -32,23 +32,23 @@ const serverConfig = (
     ssl = false,
     sslcert = joinpath(dirname(pathof(Websocket)), "etc/snakeoil.crt"),
     sslkey = joinpath(dirname(pathof(Websocket)), "etc/snakeoil.key"),
-    # 1MiB max frame size.
-    maxReceivedFrameSize = 0x100000,
-    # 8MiB max assembled message size
-    maxReceivedMessageSize = 0x800000,
+    # 64KiB max frame size.
+    maxReceivedFrameSize = 64 * 0x0400,
+    # 1MiB max assembled message size
+    maxReceivedMessageSize = 1 * 0x100000,
     # Outgoing messages larger than fragmentationThreshold will be
     # split into multiple fragments.
     fragmentOutgoingMessages = true,
     # Outgoing frames are fragmented if they exceed this threshold.
     # Default is 16KiB
-    fragmentationThreshold = 0x4000,
+    fragmentationThreshold = 16 * 0x0400,
     # The number of seconds to wait after sending a close frame
     # for an acknowledgement to come back before giving up and just
     # closing the socket.
     closeTimeout = 5,
     # The interval in number of seconds to solicit a ping / pong response. 
     # The connection will closed if no pong is received within the interval. 
-    keepaliveTimeout = 1,
+    keepaliveTimeout = 20,
     #The Nagle Algorithm makes more efficient use of network resources
     #by introducing a small delay before sending small packets so that
     #multiple messages can be batched together before going onto the

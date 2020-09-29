@@ -1,5 +1,5 @@
 include("WebsocketFrame.jl")
-const ioTypes = Union{Nothing, WebsocketFrame, HTTP.ConnectionPool.Transaction, Timer, Closereason}
+const ioTypes = Union{Nothing, WebsocketFrame, HTTP.ConnectionPool.Transaction, Timer, Closereason, Array{UInt8, 1}}
 
 struct WebsocketConnection
     id::String
@@ -80,6 +80,7 @@ struct WebsocketConnection
                 :currentFrame => WebsocketFrame(config, buffers),
                 :closeTimeout => nothing,
                 :closeReason => nothing,
+                :stash => Array{UInt8, 1}()
             ),
             Dict{Symbol, Union{Bool, Function}}(                        #callbacks
                 :message => false,
@@ -111,6 +112,12 @@ function listen(
                     exit()
                 end
             )
+            if key === :message && length(self.io[:stash]) > 0
+                binary = self.config.binary
+                data = self.io[:stash] 
+                self.callbacks[key](binary ? data : String(data))
+                self.io[:stash] = Array{UInt8, 1}()
+            end
         end
     end
 end
@@ -326,17 +333,20 @@ function processFrame(self::WebsocketConnection, frame::WebsocketFrame)
         if frame.inf[:fin]
             callback = self.callbacks[:message]
             callback isa Function && callback(binary ? data : String(data))
+            !(callback isa Function) && (self.io[:stash] = data)
         else
             unsafe_write(fragmentBuffer, pointer(data), length(data))
         end
     elseif opcode === CONTINUATION_FRAME
         unsafe_write(fragmentBuffer, pointer(data), length(data))
+        fragmentBuffer.size > self.config.maxReceivedMessageSize  && throw(error("Maximum message size exceeded"))
         if inf[:fin]
             seekstart(fragmentBuffer)
             data = binary ? read(fragmentBuffer) : read(fragmentBuffer, String)
             isopen(fragmentBuffer) && truncate(fragmentBuffer, 0)
             callback = self.callbacks[:message]
             callback isa Function && callback(data)
+            !(callback isa Function) && (self.io[:stash] = data)
         end
 
     elseif opcode === PING_FRAME
