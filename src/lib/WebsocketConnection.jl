@@ -9,15 +9,19 @@ struct WebsocketConnection
     buffers::NamedTuple
     closed::Condition
     keepalive::Dict{Symbol, Union{String, Bool}}
-    sockets::Union{Array{WebsocketConnection,1}, Nothing}
+    clients::Union{Array{WebsocketConnection,1}, Nothing}
 
-    function WebsocketConnection(config::NamedTuple, sockets::Union{Array{WebsocketConnection,1}, Nothing} = nothing)
+    function WebsocketConnection(
+        stream::HTTP.ConnectionPool.Transaction,
+        config::NamedTuple,
+        clients::Union{Array{WebsocketConnection,1}, Nothing} = nothing
+    )
         @debug "WebsocketConnection"
         buffers = (
             maskBytes = IOBuffer(; maxsize = 4),
             frameHeader = IOBuffer(; maxsize = 10),
             outBuffer = config.fragmentOutgoingMessages ? IOBuffer(; maxsize = Int(config.fragmentationThreshold)+10) : IOBuffer(),
-            inBuffer = IOBuffer(; maxsize = Int(config.maxReceivedFrameSize)),
+            inBuffer = IOBuffer(),
             fragmentBuffer = IOBuffer(; maxsize = Int(config.maxReceivedMessageSize))
         )
 
@@ -29,7 +33,7 @@ struct WebsocketConnection
             :isalive => true,
         )
         interval = config.keepaliveTimeout
-        keepaliveTimer = Timer(timer -> (
+        interval !== false && (keepaliveTimer = Timer(timer -> (
             try
                 if !keepalive[:isopen]
                     close(timer)
@@ -47,17 +51,17 @@ struct WebsocketConnection
                 keepalive[:isalive] = false
             catch
             end
-        ), interval; interval = interval)
+        ), interval; interval = interval))
 
         @async begin
             reason = wait(self.closed)
-            sockets !== nothing && filter!(connection -> (connection.id !== self.id), sockets)   
+            clients !== nothing && filter!(client -> (client.id !== self.id), clients)
             for buffer in collect(self.buffers)
                 close(buffer)
             end
             callback = self.callbacks[:close]
             if callback isa Function
-                callback(reason)
+                callback((; code = reason.code, description = reason.description))
             elseif config.type === "client"
                 @warn "$(config.type) websocket connection closed." code = reason.code description = reason.description
             end
@@ -76,7 +80,7 @@ struct WebsocketConnection
             requestHash(),
             config,                                                     #config
             Dict{Symbol, ioTypes}(                                      #io
-                :stream => nothing,
+                :stream => stream,
                 :currentFrame => WebsocketFrame(config, buffers),
                 :closeTimeout => nothing,
                 :closeReason => nothing,
@@ -91,7 +95,7 @@ struct WebsocketConnection
             buffers,                                                    #buffers
             Condition(),                                                #closed
             keepalive,                                                  #keepalive
-            sockets                                                     #sockets
+            clients                                                     #clients
         )
     end
 end
@@ -114,7 +118,7 @@ function listen(
             )
             if key === :message && length(self.io[:stash]) > 0
                 binary = self.config.binary
-                data = self.io[:stash] 
+                data = self.io[:stash]
                 self.callbacks[key](binary ? data : String(data))
                 self.io[:stash] = Array{UInt8, 1}()
             end
@@ -141,8 +145,10 @@ function startConnection(self::WebsocketConnection, io::HTTP.Streams.Stream)
             err = FrameError(err, catch_backtrace())
             if self.callbacks[:error] isa Function
                 self.callbacks[:error](err)
-            else
+            elseif self.config.type === "client"
                 err.log()
+            else 
+                @info "CLOSE_REASON_INVALID_DATA" error = err.msg
             end
             closeConnection(self, CLOSE_REASON_INVALID_DATA, err.msg)
             close(self.io[:stream])
@@ -173,7 +179,7 @@ function closeConnection(self::WebsocketConnection, reasonCode::Int, reason::Str
     !closereason.valid && throw(error("invalid connection close code."))
 
     if isopen(self.io[:stream])
-        sendCloseFrame(self, reasonCode)
+        sendCloseFrame(self, closereason.code, closereason.description)
         self.io[:closeTimeout] = Timer(timer -> (
             try
                 isopen(self.io[:stream]) && close(self.io[:stream])
@@ -204,8 +210,7 @@ function send(self::WebsocketConnection, data::Array{UInt8,1})
     end
 end
 
-function sendCloseFrame(self::WebsocketConnection, reasonCode::Int)
-    description = CLOSE_DESCRIPTIONS[reasonCode]
+function sendCloseFrame(self::WebsocketConnection, reasonCode::Int, description::String)
     frame = WebsocketFrame(self.config, self.buffers, textbuffer(description));
     frame.inf[:opcode] = CONNECTION_CLOSE_FRAME
     frame.inf[:fin] = true
@@ -330,6 +335,9 @@ function processFrame(self::WebsocketConnection, frame::WebsocketFrame)
     end
     self.keepalive[:isalive] = true
     if opcode === TEXT_FRAME || opcode === BINARY_FRAME
+        if length(data) > self.config.maxReceivedMessageSize
+            throw(error("[$CLOSE_REASON_MESSAGE_TOO_BIG]Maximum message size of $(self.config.maxReceivedMessageSize) Bytes exceeded"))
+        end
         if frame.inf[:fin]
             callback = self.callbacks[:message]
             callback isa Function && callback(binary ? data : String(data))
@@ -338,8 +346,11 @@ function processFrame(self::WebsocketConnection, frame::WebsocketFrame)
             unsafe_write(fragmentBuffer, pointer(data), length(data))
         end
     elseif opcode === CONTINUATION_FRAME
+        
+        if fragmentBuffer.size + length(data) > self.config.maxReceivedMessageSize
+            throw(error("[$CLOSE_REASON_MESSAGE_TOO_BIG]Maximum message size of $(self.config.maxReceivedMessageSize) Bytes exceeded"))
+        end
         unsafe_write(fragmentBuffer, pointer(data), length(data))
-        fragmentBuffer.size > self.config.maxReceivedMessageSize  && throw(error("Maximum message size exceeded"))
         if inf[:fin]
             seekstart(fragmentBuffer)
             data = binary ? read(fragmentBuffer) : read(fragmentBuffer, String)

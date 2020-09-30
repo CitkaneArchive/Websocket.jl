@@ -18,11 +18,23 @@ end
 function Base.close(ws::WebsocketConnection, reasonCode::Int = CLOSE_REASON_NORMAL, description::String = "")
     closeConnection(ws, reasonCode, description)
 end
-function Base.broadcast(self::WebsocketConnection, data::Union{Array{UInt8,1}, String, Number})
-    self.sockets === nothing && return
-    for connection in self.sockets
-        connection.id !== self.id && send(connection, data)
+function Base.close(self::WebsocketServer)    
+    @sync begin
+        for client in self.server[:clients]
+            close(client, CLOSE_REASON_GOING_AWAY)
+            @async wait(client.closed)
+        end
     end
+    close(self.server[:server])
+end
+function Base.broadcast(self::WebsocketConnection, data::Union{Array{UInt8,1}, String, Number})
+    self.clients === nothing && return
+    for client in self.clients
+        client.id !== self.id && send(client, data)
+    end
+end
+function Base.length(self::WebsocketServer)
+    length(self.server[:clients])
 end
 function logWSerror(err::WebsocketError)
     err.log()

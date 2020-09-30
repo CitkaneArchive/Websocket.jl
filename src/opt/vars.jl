@@ -1,5 +1,3 @@
-
-
 const clientConfig = (
     # 1MiB max frame size.
     maxReceivedFrameSize = 1 * 0x100000,
@@ -15,8 +13,9 @@ const clientConfig = (
     # for an acknowledgement to come back before giving up and just
     # closing the socket.
     closeTimeout = 5,
-    # The interval in number of seconds to solicit a ping / pong response. 
-    # The connection will closed if no pong is received within the interval. 
+    # The interval in number of seconds to solicit a ping / pong response.
+    # The client will closed if no pong is received within the interval.
+    # `false` to disable
     keepaliveTimeout = 1,
     #The Nagle Algorithm makes more efficient use of network resources
     #by introducing a small delay before sending small packets so that
@@ -46,8 +45,9 @@ const serverConfig = (
     # for an acknowledgement to come back before giving up and just
     # closing the socket.
     closeTimeout = 5,
-    # The interval in number of seconds to solicit a ping / pong response. 
-    # The connection will closed if no pong is received within the interval. 
+    # The interval in number of seconds to solicit each client with a ping / pong response.
+    # The client will closed if no pong is received within the interval.
+    # `false` to disable
     keepaliveTimeout = 20,
     #The Nagle Algorithm makes more efficient use of network resources
     #by introducing a small delay before sending small packets so that
@@ -100,7 +100,7 @@ const CLOSE_REASON_NORMAL = 1000
 const CLOSE_REASON_GOING_AWAY = 1001
 const CLOSE_REASON_PROTOCOL_ERROR = 1002
 const CLOSE_REASON_UNPROCESSABLE_INPUT = 1003
-const CLOSE_REASON_RESERVED = 1004              #Reserved value.  Undefined meaning.
+const CLOSE_REASON_RESERVED = 1004              #Not to be used on the wire. Reserved value.  Undefined meaning.
 const CLOSE_REASON_NOT_PROVIDED = 1005          #Not to be used on the wire
 const CLOSE_REASON_ABNORMAL = 1006              #Not to be used on the wire
 const CLOSE_REASON_INVALID_DATA = 1007
@@ -125,13 +125,5 @@ const CLOSE_DESCRIPTIONS = Dict{Int, String}(
     1015 => "TLS Handshake Failed"
 )
 
-# Connected, fully-open, ready to send and receive frames
-const STATE_OPEN = "open"
-# Received a close frame from the remote peer
-const STATE_PEER_REQUESTED_CLOSE = "peer_requested_close"
-# Sent close frame to remote peer.  No further data can be sent.
-const STATE_ENDING = "ending"
-# Connection is fully closed.  No further data can be sent or received.
-const STATE_CLOSED = "closed"
 
 

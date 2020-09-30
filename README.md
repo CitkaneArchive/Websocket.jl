@@ -18,7 +18,7 @@ listen(server, :connectError, err -> (
 listen(server, :client, ws -> (
     begin
         broadcast(ws, "A new connection id: $(ws.id) has joined.")
-        emit(server, "There are now $(length(server.sockets)) connections on the server.")
+        emit(server, "There are now $(length(server.server[:clients])) connections on the server.")
         
         listen(ws, :message, message -> (
             begin
@@ -30,7 +30,7 @@ listen(server, :client, ws -> (
         listen(ws, :close, reason -> (
             begin
                 broadcast(ws, "$(ws.id) left the building because: $(reason.description)")
-                emit(server, "There are now $(length(server.sockets)) connections on the server.")
+                emit(server, "There are now $(length(server.server[:clients])) connections on the server.")
             end
         ))
     end

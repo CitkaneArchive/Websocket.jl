@@ -76,6 +76,9 @@ function makeConnection(
         if !(headers["Sec-WebSocket-Version"] in ["8", "13"])
             throw(error("only version 8 and 13 of websocket protocol supported."))
         end
+        if haskey(headers, "Sec-WebSocket-Extensions")
+            throw(error("websocket extensions not supported in client"))
+        end
         connect(
             self.config,
             urlString,
@@ -89,6 +92,7 @@ function makeConnection(
 end
 
 function validateHandshake(headers::Dict{String, String}, request::HTTP.Messages.Response)
+
     if request.status != 101
         throw(error("connection error with status: $(request.status)"))
     end
@@ -101,6 +105,12 @@ function validateHandshake(headers::Dict{String, String}, request::HTTP.Messages
     if !HTTP.hasheader(request, "Sec-WebSocket-Accept", acceptHash(headers["Sec-WebSocket-Key"]))
         throw(error("""invalid "Sec-WebSocket-Accept" response from server"""))
     end
+    if HTTP.hasheader(request, "Sec-WebSocket-Extensions")
+        @warn "Server uses websocket extensions" (; 
+            value = HTTP.header(request, "Sec-WebSocket-Extensions"),
+            caution = "Websocket extensions are not supported in the client and may cause connection closure."
+        )...
+    end    
 end
 
 function connect(
@@ -120,8 +130,7 @@ function connect(
             try
                 request = startread(io)
                 validateHandshake(headers, request)
-                self = WebsocketConnection(config)
-                self.io[:stream] = io.stream
+                self = WebsocketConnection(io.stream, config)
                 notify(connected, self)
             catch err
                 notify(connected, err; error = true)

@@ -70,7 +70,6 @@ function toBuffer(self::WebsocketFrame)
         mask!(maskBytes, inf[:binaryPayload])
         
     end
-
     unsafe_write(outBuffer, pointer(inf[:binaryPayload]), len)
     seek(outBuffer, 0)
     return true
@@ -97,6 +96,10 @@ function addData(self::WebsocketFrame)
         inf[:rsv1] = firstByte & WS_RSV1 > 0
         inf[:rsv2] = firstByte & WS_RSV2 > 0
         inf[:rsv3] = firstByte & WS_RSV3 > 0
+
+        if inf[:rsv1] || inf[:rsv2] || inf[:rsv2]
+            throw(error("[$CLOSE_REASON_POLICY_VIOLATION]websocket extensions are not supported"))
+        end
 
         if inf[:opcode] >= 0x08
             inf[:length] > 125 && throw(error("illegal control frame longer than 125 bytes."))
@@ -152,7 +155,10 @@ function addData(self::WebsocketFrame)
         end
     end
     if inf[:parseState] === WAITING_FOR_PAYLOAD
-        inf[:length] > self.config.maxReceivedFrameSize && throw(error("frame size exceeds maximum"))
+        
+        if inf[:length] > self.config.maxReceivedFrameSize
+            throw(error("[$CLOSE_REASON_POLICY_VIOLATION]frame size exceeds maximum of $(self.config.maxReceivedFrameSize) Bytes."))
+        end
         if inBuffer.size - (inf[:ptr] - 1) >= inf[:length]
             inf[:binaryPayload] = read(inBuffer, inf[:length])
             inf[:ptr] = inBuffer.ptr

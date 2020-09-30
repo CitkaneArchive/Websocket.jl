@@ -6,6 +6,10 @@ struct Closereason
         if length(description) === 0 && haskey(CLOSE_DESCRIPTIONS, code)
             description = CLOSE_DESCRIPTIONS[code]
         end
+        
+        parsed = parsedescription(description)
+        parsed[2] !== nothing && (code = parsed[2])
+        description = parsed[1]
         new(
             code,
             description,
@@ -13,7 +17,18 @@ struct Closereason
         )
     end
 end
-
+function parsedescription(description::String)::Array{Union{String, Int, Nothing}, 1}
+    reg = r"^\[(\d+)*?\]"
+    code = nothing
+    description = replace(description, reg => newcode -> (
+        begin
+            result = match(reg, newcode).captures[1]
+            result !== nothing && (code = parse(Int, result))
+            s""
+        end
+    ))
+    [description, code]
+end
 function validateCloseReason(code::Int)
     if code < 1000 
         #Status codes in the range 0-999 are not used

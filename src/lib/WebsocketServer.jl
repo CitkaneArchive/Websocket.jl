@@ -2,7 +2,7 @@ struct WebsocketServer
     config::NamedTuple
     callbacks::Dict{Symbol, Union{Bool, Function}}
     flags::Dict{Symbol, Bool}
-    sockets::Array{WebsocketConnection, 1}
+    server::Dict{Symbol, Union{Sockets.TCPServer, Array{WebsocketConnection, 1}, Nothing}}
 
     function WebsocketServer(; config...)
         @debug "WebsocketClient"
@@ -12,11 +12,15 @@ struct WebsocketServer
             Dict{Symbol, Union{Bool, Function}}(
                 :client => false,
                 :connectError => false,
+                :closed => false
             ),
             Dict{Symbol, Bool}(
                 :isopen => false
             ),
-            []
+            Dict{Symbol, Union{Sockets.TCPServer, Array{WebsocketConnection, 1}, Nothing}}(
+                :clients => Array{WebsocketConnection, 1}(),
+                :socket => nothing
+            )
         )
     end
 
@@ -67,10 +71,10 @@ function serve(self::WebsocketServer, port::Int = 8080, host = "localhost"; opti
         end
         callback = self.callbacks[:client]
         callback === false && throw(error("tried to bind the server before registering \":client\" handler"))
-
-        HTTP.listen(host, port; options...) do io
-            tcp = io.stream.c.io isa TCPSocket ? io.stream.c.io : io.stream.c.io.bio
-            Sockets.nagle(tcp, config.useNagleAlgorithm)
+        self.server[:server] = Sockets.listen(host, port)
+        Sockets.nagle(self.server[:server], config.useNagleAlgorithm)
+        self.flags[:isopen] = true
+        HTTP.listen(; server = self.server[:server],  options...) do io
             try
                 headers = io.message
                 validateUpgrade(headers)
@@ -82,11 +86,14 @@ function serve(self::WebsocketServer, port::Int = 8080, host = "localhost"; opti
 
                 startwrite(io)
 
-                connection = WebsocketConnection(config, self.sockets)
-                connection.io[:stream] = io.stream
-                push!(self.sockets, connection)
-                callback(connection)
-                startConnection(connection, io)
+                client = WebsocketConnection(io.stream, config, self.server[:clients])
+                push!(self.server[:clients], client)
+                callback(client)
+                if HTTP.hasheader(headers, "Sec-WebSocket-Extensions")
+                    close(client, CLOSE_REASON_EXTENSION_REQUIRED)
+                else
+                    startConnection(client, io)
+                end
             catch err
                 @error err exception = (err, catch_backtrace())
                 HTTP.setstatus(io, 400)
@@ -94,6 +101,16 @@ function serve(self::WebsocketServer, port::Int = 8080, host = "localhost"; opti
             end
         end
     catch err
+        self.flags[:isopen] = false
+        if typeof(err) === Base.IOError && err.msg === "accept: software caused connection abort (ECONNABORTED)"
+            callback = self.callbacks[:closed]
+            if callback isa Function
+                callback((; host = host, port = port))
+            else
+                @info "The websocket server was closed cleanly:" host = host port = port
+            end
+            return
+        end
         err = ConnectError(err, catch_backtrace())
         callback = self.callbacks[:connectError]
         if callback isa Function
@@ -105,7 +122,7 @@ function serve(self::WebsocketServer, port::Int = 8080, host = "localhost"; opti
 end
 
 function emit(self::WebsocketServer, data::Union{Array{UInt8,1}, String, Number})
-    for connection in self.sockets
-        send(connection, data)
+    for client in self.server[:clients]
+        send(client, data)
     end
 end
