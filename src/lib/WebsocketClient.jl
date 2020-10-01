@@ -24,6 +24,9 @@ function listen(
     key::Symbol,
     cb::Function
 )
+    if !haskey(self.callbacks, key)
+        return @warn "WebsocketClient has no listener for :$key."
+    end
     if haskey(self.callbacks, key) && !(self.callbacks[key] isa Function)
         self.callbacks[key] = data -> (
             @async try
@@ -43,7 +46,7 @@ function makeConnection(
     headers::Dict{String, String};
         options...
 )
-    @debug "WebsocketClient.connect"   
+    @debug "WebsocketClient.connect"
     if isopen(self)
         @warn """called "connect" on a WebsocketClient that is open or opening."""
         return
@@ -58,14 +61,14 @@ function makeConnection(
             wait(connection.closed)
             self.flags[:isopen] = false
         else
-            throw(error("""called connect() before registering ":connect" event."""))
+            throw(error("""called "open" before registering ":connect" event."""))
         end
     catch err
         err = ConnectError(err, catch_backtrace())
         self.flags[:isopen] = false
         if self.callbacks[:connectError] isa Function
             self.callbacks[:connectError](err)
-        else            
+        else
             err.log()
             exit()
         end
@@ -106,11 +109,11 @@ function validateHandshake(headers::Dict{String, String}, request::HTTP.Messages
         throw(error("""invalid "Sec-WebSocket-Accept" response from server"""))
     end
     if HTTP.hasheader(request, "Sec-WebSocket-Extensions")
-        @warn "Server uses websocket extensions" (; 
+        @warn "Server uses websocket extensions" (;
             value = HTTP.header(request, "Sec-WebSocket-Extensions"),
             caution = "Websocket extensions are not supported in the client and may cause connection closure."
         )...
-    end    
+    end
 end
 
 function connect(

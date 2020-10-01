@@ -12,7 +12,8 @@ struct WebsocketServer
             Dict{Symbol, Union{Bool, Function}}(
                 :client => false,
                 :connectError => false,
-                :closed => false
+                :closed => false,
+                :listening => false
             ),
             Dict{Symbol, Bool}(
                 :isopen => false
@@ -30,6 +31,9 @@ function listen(
     key::Symbol,
     cb::Function
 )
+    if !haskey(self.callbacks, key)
+        return @warn "WebsocketServer has no listener for :$key."
+    end
     if haskey(self.callbacks, key) && !(self.callbacks[key] isa Function)
         self.callbacks[key] = data -> (
             @async try
@@ -74,6 +78,9 @@ function serve(self::WebsocketServer, port::Int = 8080, host = "localhost"; opti
         self.server[:server] = Sockets.listen(host, port)
         Sockets.nagle(self.server[:server], config.useNagleAlgorithm)
         self.flags[:isopen] = true
+        if self.callbacks[:listening] isa Function
+            self.callbacks[:listening]((; port = port, host = host))
+        end
         HTTP.listen(; server = self.server[:server],  options...) do io
             try
                 headers = io.message

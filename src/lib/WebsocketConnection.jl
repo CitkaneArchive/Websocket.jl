@@ -69,7 +69,7 @@ struct WebsocketConnection
 
         atexit(() -> (
             if isopen(self.io[:stream])
-                self.io[:closeReason] = closeReason(CLOSE_REASON_ABNORMAL, "julia process exited.")
+                self.io[:closeReason] = Closereason(CLOSE_REASON_ABNORMAL, "julia process exited.")
                 close(self.io[:stream])
                 wait(self.closed)
                 sleep(0.001)
@@ -105,6 +105,9 @@ function listen(
     key::Symbol,
     cb::Function
 )
+    if !haskey(self.callbacks, key)
+        return @warn "WebsocketConnection has no listener for :$key."
+    end
     if haskey(self.callbacks, key)
         if !(self.callbacks[key] isa Function)
             self.callbacks[key] = data -> (
@@ -145,18 +148,15 @@ function startConnection(self::WebsocketConnection, io::HTTP.Streams.Stream)
             unsafe_write(self.buffers.inBuffer, pointer(data), length(data))
             processReceivedData(self)
         catch err
-            @show typeof(err)
             err = FrameError(err, catch_backtrace())
             if self.callbacks[:error] isa Function
                 self.callbacks[:error](err)
             elseif self.config.type === "client"
                 err.log()
-            else 
-                @info "CLOSE_REASON_INVALID_DATA" error = err.msg
+            else
+                @debug "CLOSE_REASON_INVALID_DATA" error = err.msg
             end
             closeConnection(self, CLOSE_REASON_INVALID_DATA, err.msg)
-            close(self.io[:stream])
-            break
         end
     end
     self.keepalive[:isopen] && gracefulEnd(self)
@@ -184,14 +184,16 @@ function closeConnection(self::WebsocketConnection, reasonCode::Int, reason::Str
 
     if isopen(self.io[:stream])
         sendCloseFrame(self, closereason.code, closereason.description)
+
         self.io[:closeTimeout] = Timer(timer -> (
             try
                 isopen(self.io[:stream]) && close(self.io[:stream])
             catch
             end
         ), self.config.closeTimeout)
-    else
-        isopen(self.io[:stream]) && close(self.io[:stream])
+
+    elseif self.io[:closeTimeout] isa Timer && isopen(self.io[:closeTimeout])
+        close(self.io[:closeTimeout])
     end
 end
 
@@ -350,7 +352,7 @@ function processFrame(self::WebsocketConnection, frame::WebsocketFrame)
             unsafe_write(fragmentBuffer, pointer(data), length(data))
         end
     elseif opcode === CONTINUATION_FRAME
-        
+
         if fragmentBuffer.size + length(data) > self.config.maxReceivedMessageSize
             throw(error("[$CLOSE_REASON_MESSAGE_TOO_BIG]Maximum message size of $(self.config.maxReceivedMessageSize) Bytes exceeded"))
         end
@@ -389,8 +391,4 @@ function processFrame(self::WebsocketConnection, frame::WebsocketFrame)
     end
 end
 # End receive data
-
-
-
-
 

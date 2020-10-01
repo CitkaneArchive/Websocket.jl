@@ -1,4 +1,4 @@
-using Suppressor, Base64, MbedTLS
+using Base64, MbedTLS
 
 include("../src/opt/vars.jl")
 include("../src/opt/utils.jl")
@@ -88,4 +88,3 @@ max = @test_nowarn getmaxwithheaders(serverConfig)
 @suppress begin
     @test_nowarn explain(Dict())
 end
-

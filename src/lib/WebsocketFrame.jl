@@ -28,7 +28,7 @@ struct WebsocketFrame
     end
 end
 
-function toBuffer(self::WebsocketFrame) 
+function toBuffer(self::WebsocketFrame)
     outBuffer = self.buffers.outBuffer
     !isopen(outBuffer) && return false
     truncate(outBuffer, 0)
@@ -55,7 +55,7 @@ function toBuffer(self::WebsocketFrame)
     end
 
     write(outBuffer, UInt8(firstByte), UInt8(secondByte))
-    
+
     if len > 125 && len <= 0xFFFF
         write(outBuffer, hton(UInt16(len)))
     elseif len > 0xFFFF
@@ -68,7 +68,7 @@ function toBuffer(self::WebsocketFrame)
         seekstart(maskBytes)
         write(outBuffer, maskBytes)
         mask!(maskBytes, inf[:binaryPayload])
-        
+
     end
     unsafe_write(outBuffer, pointer(inf[:binaryPayload]), len)
     seek(outBuffer, 0)
@@ -76,14 +76,14 @@ function toBuffer(self::WebsocketFrame)
 end
 
 function addData(self::WebsocketFrame)
-    
+
     inf = self.inf
     header = self.buffers.frameHeader
     inBuffer = self.buffers.inBuffer
     maskBytes = self.buffers.maskBytes
     seek(inBuffer, inf[:ptr] - 1)
 
-    if inf[:parseState] === DECODE_HEADER && inBuffer.size >= 2       
+    if inf[:parseState] === DECODE_HEADER && inBuffer.size >= 2
         seekstart(header)
         write(header, read(inBuffer, 2))
         inf[:ptr] = inBuffer.ptr
@@ -155,7 +155,7 @@ function addData(self::WebsocketFrame)
         end
     end
     if inf[:parseState] === WAITING_FOR_PAYLOAD
-        
+
         if inf[:length] > self.config.maxReceivedFrameSize
             throw(error("[$CLOSE_REASON_POLICY_VIOLATION]frame size exceeds maximum of $(self.config.maxReceivedFrameSize) Bytes."))
         end
@@ -172,7 +172,7 @@ function addData(self::WebsocketFrame)
             end
 
             inf[:parseState] = COMPLETE
-            
+
             return true
         end
     end

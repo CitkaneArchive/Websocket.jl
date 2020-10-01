@@ -124,6 +124,3 @@ const CLOSE_DESCRIPTIONS = Dict{Int, String}(
     1011 => "Internal Server Error",
     1015 => "TLS Handshake Failed"
 )
-
-
-

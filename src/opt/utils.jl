@@ -6,7 +6,7 @@ struct Closereason
         if length(description) === 0 && haskey(CLOSE_DESCRIPTIONS, code)
             description = CLOSE_DESCRIPTIONS[code]
         end
-        
+
         parsed = parsedescription(description)
         parsed[2] !== nothing && (code = parsed[2])
         description = parsed[1]
@@ -30,7 +30,7 @@ function parsedescription(description::String)::Array{Union{String, Int, Nothing
     [description, code]
 end
 function validateCloseReason(code::Int)
-    if code < 1000 
+    if code < 1000
         #Status codes in the range 0-999 are not used
         return false;
     end
@@ -60,7 +60,7 @@ msg(err::Exception) = (hasfield(typeof(err), :msg) ? err.msg : string(typeof(err
 logError(self::Exception, err::Exception, trace::Array) = @error string(typeof(self))*"(\"$(self.msg)\")" exception = (err, trace)
 struct ConnectError <: WebsocketError
     msg::String
-    log::Function   
+    log::Function
     function ConnectError(err::Exception, trace::Array = [])
         self = new(
             msg(err),
@@ -70,7 +70,7 @@ struct ConnectError <: WebsocketError
 end
 struct CallbackError <: WebsocketError
     msg::String
-    log::Function   
+    log::Function
     function CallbackError(err::Exception, trace::Array = [])
         self = new(
             msg(err),
@@ -80,7 +80,7 @@ struct CallbackError <: WebsocketError
 end
 struct FrameError <: WebsocketError
     msg::String
-    log::Function   
+    log::Function
     function FrameError(err::Exception, trace::Array = [])
         self = new(
             msg(err),
@@ -135,5 +135,3 @@ function explain(object::Any)
     end
     println("----------------------------------")
 end
-
-

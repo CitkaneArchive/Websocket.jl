@@ -2,8 +2,9 @@ __precompile__()
 
 module Websocket
 using HTTP, Base64, Sockets, MbedTLS
+import Sockets: listen
 
-export WebsocketServer, WebsocketClient, WebsocketConnection, listen, serve, send, emit, logWSerror, ping
+export WebsocketServer, WebsocketClient, WebsocketConnection, serve, send, listen, emit, logWSerror, ping
 
 include("opt/vars.jl")
 include("opt/utils.jl")
@@ -16,6 +17,9 @@ function Base.open(client::WebsocketClient, url::String, headers::Dict{String, S
 end
 function Base.isopen(client::WebsocketClient)
     client.flags[:isopen]
+end
+function Base.isopen(server::WebsocketServer)
+    server.flags[:isopen]
 end
 function Base.close(ws::WebsocketConnection, reasonCode::Int = CLOSE_REASON_NORMAL, description::String = "")
     closeConnection(ws, reasonCode, description)
