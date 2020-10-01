@@ -1,3 +1,5 @@
+__precompile__()
+
 module Websocket
 using HTTP, Base64, Sockets, MbedTLS
 

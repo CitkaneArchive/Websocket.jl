@@ -120,6 +120,11 @@ function makeHeaders(extend::Dict{String, String})
     headers
 end
 
+function getmaxwithheaders(config::NamedTuple)
+    !config.fragmentOutgoingMessages && return (Int(config.maxReceivedMessageSize) + 10)
+    Int(config.maxReceivedMessageSize + (ceil(config.maxReceivedMessageSize / config.fragmentationThreshold)*10))
+end
+
 function explain(object::Any)
     type = typeof(object)
     @show type

@@ -20,8 +20,8 @@ struct WebsocketConnection
         buffers = (
             maskBytes = IOBuffer(; maxsize = 4),
             frameHeader = IOBuffer(; maxsize = 10),
-            outBuffer = config.fragmentOutgoingMessages ? IOBuffer(; maxsize = Int(config.fragmentationThreshold)+10) : IOBuffer(),
-            inBuffer = IOBuffer(),
+            outBuffer = config.fragmentOutgoingMessages ? IOBuffer(; maxsize = Int(config.fragmentationThreshold) + 10) : IOBuffer(),
+            inBuffer = IOBuffer(; maxsize = getmaxwithheaders(config)),
             fragmentBuffer = IOBuffer(; maxsize = Int(config.maxReceivedMessageSize))
         )
 
@@ -138,10 +138,14 @@ function startConnection(self::WebsocketConnection, io::HTTP.Streams.Stream)
     while !eof(handle.file)
         data = readavailable(handle.available)
         isopen(self.io[:stream]) && try
+            if length(data) > self.buffers.inBuffer.maxsize
+                throw(error("[$CLOSE_REASON_MESSAGE_TOO_BIG]Maximum message size of $(self.config.maxReceivedMessageSize) Bytes exceeded"))
+            end
             seekend(self.buffers.inBuffer)
             unsafe_write(self.buffers.inBuffer, pointer(data), length(data))
             processReceivedData(self)
         catch err
+            @show typeof(err)
             err = FrameError(err, catch_backtrace())
             if self.callbacks[:error] isa Function
                 self.callbacks[:error](err)
