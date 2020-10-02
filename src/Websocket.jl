@@ -4,7 +4,7 @@ module Websocket
 using HTTP, Base64, Sockets, MbedTLS
 import Sockets: listen
 
-export WebsocketServer, WebsocketClient, WebsocketConnection, serve, send, listen, emit, logWSerror, ping
+export WebsocketServer, WebsocketClient, WebsocketConnection, WebsocketError, serve, send, listen, emit, logWSerror, ping
 
 include("opt/vars.jl")
 include("opt/utils.jl")
@@ -18,35 +18,71 @@ end
 function Base.isopen(client::WebsocketClient)
     client.flags[:isopen]
 end
-function Base.isopen(server::WebsocketServer)
-    server.flags[:isopen]
-end
+
 function Base.close(ws::WebsocketConnection, reasonCode::Int = CLOSE_REASON_NORMAL, description::String = "")
     closeConnection(ws, reasonCode, description)
 end
-function Base.close(self::WebsocketServer)    
-    @sync begin
-        for client in self.server[:clients]
-            close(client, CLOSE_REASON_GOING_AWAY)
-            @async wait(client.closed)
-        end
-    end
-    close(self.server[:server])
-end
+
 function Base.broadcast(self::WebsocketConnection, data::Union{Array{UInt8,1}, String, Number})
     self.clients === nothing && return
     for client in self.clients
         client.id !== self.id && send(client, data)
     end
 end
-function Base.length(self::WebsocketServer)
-    length(self.server[:clients])
-end
+"""
+    logWSerror(err::Union{Exception, WebsocketError})
+A convenience method to lift errors into a scope and log them.
+# Example
+```julia
+using Websocket
+
+server = WebsocketServer()
+ended = Condition()
+
+listen(server, :client, client -> ())
+listen(server, :connectError, err::WebsocketError -> (
+    notify(ended, err)
+))
+
+@async serve(server, 8080, "notahost")
+
+reason = wait(ended)
+reason isa Exception && logWSerror(reason)
+```
+"""
 function logWSerror(err::WebsocketError)
     err.log()
 end
 function logWSerror(err::Exception)
     @error err
+end
+"""
+    throwWSerror(err::Union{Exception, WebsocketError})
+A convenience method to lift fatal errors into a scope and throw them.
+# Example
+```julia
+using Websocket
+
+server = WebsocketServer()
+ended = Condition()
+
+listen(server, :client, client -> ())
+listen(server, :connectError, err::WebsocketError -> (
+    notify(ended, err)
+))
+
+@async serve(server, 8080, "notahost")
+
+reason = wait(ended)
+reason isa Exception && throwWSerror(reason)
+```
+"""
+function throwWSerror(err::WebsocketError)
+    err.log()
+    exit()
+end
+function throwWSerror(err::Exception)
+    throw(err)
 end
 
 

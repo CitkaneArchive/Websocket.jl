@@ -54,10 +54,23 @@ function validateCloseReason(code::Int)
         return false;
     end
 end
+"""
+    abstract type WebsocketError <: Exception
+Websocket child error types have the following fields:
+- msg::String
+- log::Function
 
+The `log()` function will internally call: @error msg  exception = (err, trace)
+
+Where `trace` is the backtrace of the exception origin.
+"""
 abstract type WebsocketError <: Exception end
 msg(err::Exception) = (hasfield(typeof(err), :msg) ? err.msg : string(typeof(err)))
 logError(self::Exception, err::Exception, trace::Array) = @error string(typeof(self))*"(\"$(self.msg)\")" exception = (err, trace)
+"""
+    struct ConnectError <: WebsocketError 
+An exception originated while trying to start a server or connect to a server
+"""
 struct ConnectError <: WebsocketError
     msg::String
     log::Function
@@ -68,6 +81,10 @@ struct ConnectError <: WebsocketError
         )
     end
 end
+"""
+    struct CallbackError <: WebsocketError
+An exception originated in a user provided callback function
+"""
 struct CallbackError <: WebsocketError
     msg::String
     log::Function
@@ -78,6 +95,10 @@ struct CallbackError <: WebsocketError
         )
     end
 end
+"""
+    struct FrameError <: WebsocketError
+An exception originated while parsing a websocket frame
+"""
 struct FrameError <: WebsocketError
     msg::String
     log::Function

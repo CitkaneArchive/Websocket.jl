@@ -27,36 +27,97 @@ const clientConfig = (
     #use binary Arrays instead of String as messaging format
     binary = false
 )
+"""
+# The default options for [`WebsocketServer`](@ref)
+!!! info "ssl"
+    `[false]::Bool`
+
+    Whether to use ssl on the server.
+    !!! warning
+        Due to an underlying [issue](https://github.com/JuliaWeb/HTTP.jl/issues/318) in HTTP, a client calling `ws://` on a `wss:://` 
+        server will cause the server to error and close. Ensure that only ssl traffic can
+        reach your server port.
+
+!!! info "sslcert"
+    `[../src/etc/etc/snakeoil.crt in the Websocket module dir]::String`
+
+    Absolute path to your ssl cert
+
+!!! info "sslkey"
+    `[../src/etc/etc/snakeoil.key in the Websocket module dir]::String`
+
+    Absolute path to your ssl key
+
+!!! info "maxReceivedFrameSize"
+    `[64 * 0x0400 = 64KiB]::Integer`
+
+    The maximum frame size that the server will accept
+
+!!! info "maxReceivedMessageSize"
+    `[1 * 0x100000 = 1MiB]::Integer`
+
+    The maximum assembled message size that the server will accept
+
+!!! info "fragmentOutgoingMessages"
+    `[true]::Bool`
+
+    Outgoing frames are fragmented if they exceed the set threshold.
+
+!!! info "fragmentationThreshold"
+    `[16 * 0x0400 = 16KiB]::Integer`
+
+    Outgoing frames are fragmented if they exceed this threshold.
+
+!!! info "closeTimeout"
+    `[5]::Int`
+
+    The number of seconds to wait after sending a close frame for an acknowledgement to
+    return from the client. Will force close the client if timed out.
+
+!!! info "keepaliveTimeout"
+    `[20]::Union{Int, Bool}`
+
+    The interval in number of seconds to solicit each client with a ping / pong
+    response. The client will be closed if no pong is received within the interval.
+
+    The timer is only active when no data is received from the client within the interval,
+    ie. the client will only be pinged if inactive for a period longer than the interval.
+
+    `false` to disable.
+    !!! warning
+        Due to an underlying issue with [HTTP](https://juliaweb.github.io/HTTP.jl/stable/), 
+        a server network disconnect will cause all clients to block in their listen loop, 
+        only registering `disconnect` when the network re-connects.
+
+        `keepaliveTimeout` uses ping/pong and will register client disconnects more efficiently
+        in network outage events.
+
+!!! info "useNagleAlgorithm"
+    `[false]::Bool`
+
+    The Nagle Algorithm makes more efficient use of network resources
+    by introducing a small delay before sending small packets so that
+    multiple messages can be batched together before going onto the
+    wire.  This however comes at the cost of latency, so the default
+    is to disable it.  If you don't need low latency and are streaming
+    lots of small messages, you can change this to `true`
+
+!!! info "binary"
+    `[false]::Bool`
+    
+    Use Array{UInt8, 1} instead of String as messaging format.
+"""
 const serverConfig = (
     ssl = false,
     sslcert = joinpath(dirname(pathof(Websocket)), "etc/snakeoil.crt"),
     sslkey = joinpath(dirname(pathof(Websocket)), "etc/snakeoil.key"),
-    # 64KiB max frame size.
     maxReceivedFrameSize = 64 * 0x0400,
-    # 1MiB max assembled message size
     maxReceivedMessageSize = 1 * 0x100000,
-    # Outgoing messages larger than fragmentationThreshold will be
-    # split into multiple fragments.
     fragmentOutgoingMessages = true,
-    # Outgoing frames are fragmented if they exceed this threshold.
-    # Default is 16KiB
     fragmentationThreshold = 16 * 0x0400,
-    # The number of seconds to wait after sending a close frame
-    # for an acknowledgement to come back before giving up and just
-    # closing the socket.
     closeTimeout = 5,
-    # The interval in number of seconds to solicit each client with a ping / pong response.
-    # The client will closed if no pong is received within the interval.
-    # `false` to disable
     keepaliveTimeout = 20,
-    #The Nagle Algorithm makes more efficient use of network resources
-    #by introducing a small delay before sending small packets so that
-    #multiple messages can be batched together before going onto the
-    #wire.  This however comes at the cost of latency, so the default
-    #is to disable it.  If you don't need low latency and are streaming
-    #lots of small messages, you can change this to 'true'
     useNagleAlgorithm = false,
-    #use binary Arrays instead of String as messaging format
     binary = false
 )
 

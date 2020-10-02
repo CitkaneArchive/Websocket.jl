@@ -1,3 +1,14 @@
+"""
+    WebsocketServer([; options...])
+
+Constructs a new WebsocketServer, overriding the passed options in [`serverConfig`](@ref).
+
+# Example
+```julia
+using Websocket
+server = WebsocketServer([; options...])
+```
+"""
 struct WebsocketServer
     config::NamedTuple
     callbacks::Dict{Symbol, Union{Bool, Function}}
@@ -26,16 +37,60 @@ struct WebsocketServer
     end
 
 end
+"""
+    listen(server::Websocket.WebsocketServer, event::Symbol, callback::Function)
+Register event callbacks onto a server. The callback must be a function with exactly one argument.
+
+Valid events are:
+- :listening
+- :client
+- :connectError
+- :closed
+
+!!! note ":listening"
+    Triggered when the server TCP socket opens
+    ```julia
+    listen(server, :listening, details::NamedTuple -> (
+        # details.port::Int
+        # details.host::Union{Sockets.IPv4, Sockets.IPv6}
+    ))
+    ```
+!!! note ":client"
+    Triggered when a client connects to the server
+    ```julia
+    listen(server, :client, client::WebsocketConnection -> (
+        begin
+            # ...
+        end
+    ))
+    ```
+!!! note ":connectError"
+    Triggered when an attempt to open a TCP socket listener fails
+    ```julia
+    listen(server, :connectError, err::WebsocketError.ConnectError -> (
+        # err.msg::String
+        # err.log::Function -> logs the error message with stack trace
+    ))
+    ```
+!!! note ":closed"
+    Triggered when the server TCP socket closes
+    ```julia
+    listen(server, :closed, details::NamedTuple -> (
+        # details.port::Int
+        # details.host::Union{Sockets.IPv4, Sockets.IPv6}
+    ))
+    ```
+"""
 function listen(
     self::WebsocketServer,
-    key::Symbol,
+    event::Symbol,
     cb::Function
 )
-    if !haskey(self.callbacks, key)
-        return @warn "WebsocketServer has no listener for :$key."
+    if !haskey(self.callbacks, event)
+        return @warn "WebsocketServer has no listener for :$event."
     end
-    if haskey(self.callbacks, key) && !(self.callbacks[key] isa Function)
-        self.callbacks[key] = data -> (
+    if haskey(self.callbacks, event) && !(self.callbacks[event] isa Function)
+        self.callbacks[event] = data -> (
             @async try
                 cb(data)
             catch err
@@ -62,7 +117,26 @@ function validateUpgrade(headers::HTTP.Messages.Request)
     end
 end
 
-function serve(self::WebsocketServer, port::Int = 8080, host = "localhost"; options...)
+"""
+    serve(server::Websocket.WebsocketServer, [port::Int, host::String; options...])
+Opens up a TCP connection listener. Blocks while the server is listening.
+
+Defaults:
+- port: 8080
+- host: "localhost"
+
+`; options...` are passed to the underlying [HTTP.servers.listen](https://juliaweb.github.io/HTTP.jl/stable/public_interface/#Server-/-Handlers-1)
+
+# Example
+```julia
+closed = Condition()
+#...
+@async serve(server, 8081, "localhost")
+#...
+wait(closed)
+```
+"""
+function serve(self::WebsocketServer, port::Int = 8080, host::String = "localhost"; options...)
     @debug "WebsocketServer.listen"
     config = self.config
     options = merge(serverOptions, (; options...))
@@ -128,8 +202,44 @@ function serve(self::WebsocketServer, port::Int = 8080, host = "localhost"; opti
     end
 end
 
+"""
+    emit(server::Websocket.WebsocketServer, data::Union{Array{UInt8,1}, String, Number})
+Sends the given `data` as a message to all clients connected to the server.
+
+# Example
+```julia
+emit(server, "Hello everybody from your loving server.")
+```
+"""
 function emit(self::WebsocketServer, data::Union{Array{UInt8,1}, String, Number})
     for client in self.server[:clients]
         send(client, data)
     end
+end
+"""
+    close(server::Websocket.WebsocketServer)
+Gracefully disconnects all connected clients, then closes the TCP socket listener.
+"""
+function Base.close(self::WebsocketServer)    
+    @sync begin
+        for client in self.server[:clients]
+            close(client, CLOSE_REASON_GOING_AWAY)
+            @async wait(client.closed)
+        end
+    end
+    close(self.server[:server])
+end
+"""
+    isopen(server::Websocket.WebsocketServer)::Bool
+Returns a Bool indication if the server TCP listener is open.
+"""
+function Base.isopen(server::WebsocketServer)
+    server.flags[:isopen]
+end
+"""
+    length(server::WebsocketServer)::Int
+Returns the number of clients connected to the server. 
+"""
+function Base.length(self::WebsocketServer)
+    length(self.server[:clients])
 end

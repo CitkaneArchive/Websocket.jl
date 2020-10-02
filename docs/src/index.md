@@ -1,7 +1,10 @@
-# Websocket
+# Websocket.jl
 
-## Basic usage server:
+A flexible, powerful, high level interface for Websockets in Julia.
 
+Provides a SERVER and CLIENT.
+
+## Basic example for SERVER
 ```julia
 using Websocket
 
@@ -32,8 +35,7 @@ listen(server, :closed, details -> (
 @async serve(server; verbose = true)
 wait(ended)
 ```
-## Basic usage client:
-
+## Basic example for CLIENT
 ```julia
 using Websocket
 
