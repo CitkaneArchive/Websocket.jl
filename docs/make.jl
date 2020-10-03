@@ -18,10 +18,6 @@ makedocs(
         ],
         "Websocket Connection" => "WebsocketConnection.md",
         "Error handling" => "Errors.md",
-        "Examples" => [
-            "Server Examples" => "ServerExamples.md",
-            "Client Examples" => "ClientExamples.md"
-        ],
         "Acknowledgments" => "Acknowledgments.md"
     ]
 )
