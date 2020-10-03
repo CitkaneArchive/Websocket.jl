@@ -6,9 +6,9 @@ Options are passed to the server at two stages:
 ```julia
 using Websocket
 
-server = WebsocketServer([; serverOptions])
+server = WebsocketServer([; serverOptions...])
 # ...
-serve(server, [port, host, ; socketOptions])
+serve(server, [port, host, ; socketOptions...])
 ```
 ```@meta
 CurrentModule = Websocket

@@ -3,6 +3,17 @@ Provides a Websocket server compatible with Websocket versions [8, 13]
 
 Currently does not support Websocket Extensions
 
+Minimum required usage:
+```julia
+using Websocket
+
+server = WebsocketServer()
+
+listen(server, :client, client::WebsocketConnection -> ()) #must be called before `serve`
+
+serve(server)
+```
+
 ## Constructor
 ```@docs
 WebsocketServer

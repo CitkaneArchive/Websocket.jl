@@ -99,7 +99,51 @@ struct WebsocketConnection
         )
     end
 end
+"""
+    listen(ws::Websocket.WebsocketConnection, event::Symbol, callback::Function)
+Register event callbacks onto a `WebsocketConnection`. The callback must be a function with exactly one argument.
 
+Valid events are:
+- :message
+- :pong
+- :error
+- :close
+
+!!! note ":message"
+    Triggered when the TCP stream receives a message
+    ```julia
+    listen(ws::WebsocketConnection, :message, message::Union{String, Array{UInt8, 1}} -> (
+        begin
+            #...
+        end
+    ))
+    ```
+!!! note ":pong"
+    Triggered when the TCP stream receives a pong response
+    ```julia
+    listen(ws::WebsocketConnection, :pong, message::Union{String, Array{UInt8, 1}} -> (
+        begin
+            #...
+        end
+    ))
+    ```
+!!! note ":error"
+    Triggered when an error occurs during data processing
+    ```julia
+    listen(ws::WebsocketConnection, :error, err::Union{WebsocketError.FrameError, WebsocketError.CallbackError} -> (
+        # err.msg::String
+        # err.log::Function -> logs the error message with stack trace
+    ))
+    ```
+!!! note ":close"
+    Triggered when the underlying TCP stream has closed
+    ```julia
+    listen(ws::WebsocketConnection, :close, reason::NamedTuple -> (
+        # reason.code::Int
+        # reason.description::String
+    ))
+    ```
+"""
 function listen(
     self::WebsocketConnection,
     key::Symbol,
@@ -198,6 +242,10 @@ function closeConnection(self::WebsocketConnection, reasonCode::Int, reason::Str
 end
 
 # Send data
+"""
+    send(ws::WebsocketConnection, data::Union{String, Number, Array{UInt8,1}})
+Send the given `data` as a message over the wire.
+"""
 send(self::WebsocketConnection, data::Number) = send(self, string(data))
 send(self::WebsocketConnection, data::String) = send(self, textbuffer(data))
 function send(self::WebsocketConnection, data::Array{UInt8,1})
@@ -223,6 +271,12 @@ function sendCloseFrame(self::WebsocketConnection, reasonCode::Int, description:
     frame.inf[:closeStatus] = reasonCode
     sendFrame(self, frame)
 end
+"""
+    ping(ws::WebsocketConnection, data::Union{String, Number})
+Send `data` as ping message to the `ws` peer.
+
+`data` is limited to 125Bytes, and will automatically be truncated if over this limit.
+"""
 ping(self::WebsocketConnection, data::Number) = ping(self, String(data))
 function ping(self::WebsocketConnection, data::String)
     try
@@ -392,3 +446,32 @@ function processFrame(self::WebsocketConnection, frame::WebsocketFrame)
 end
 # End receive data
 
+"""
+    close(ws::WebsocketConnection [, reasonCode::Int, description::String])
+Closes a websocket connection.
+
+Sends the close frame to the peer, waits for the response close frame, 
+or times out on `closeTimeout` before closing the underlying TCP stream.
+
+Optional `reasonCode` must be a valid [rfc6455](https://tools.ietf.org/html/rfc6455#section-7.4) code, 
+suitable for sending over the wire.
+
+Defaults: `1000` : "Normal connection closure"
+"""
+function Base.close(ws::WebsocketConnection, reasonCode::Int = CLOSE_REASON_NORMAL, description::String = "")
+    closeConnection(ws, reasonCode, description)
+end
+"""
+    broadcast(client::WebsocketConnection, data::Union{Array{UInt8,1}, String, Number})
+[`send`](@ref) the given `data` as a message to all connected clients, except the given `client`.
+
+In a SERVER context, to communicate with all clients on the SERVER, use [`emit`](@ref)
+
+Only used if the `client` is in a SERVER context, otherwise NOOP.
+"""
+function Base.broadcast(client::WebsocketConnection, data::Union{Array{UInt8,1}, String, Number})
+    client.clients === nothing && return
+    for otherclient in client.clients
+        client.id !== otherclient.id && send(otherclient, data)
+    end
+end

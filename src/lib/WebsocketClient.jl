@@ -1,3 +1,14 @@
+"""
+    WebsocketClient([; options...])
+
+Constructs a new WebsocketClient, overriding [`clientConfig`](@ref) with the passed options.
+
+# Example
+```julia
+using Websocket
+client = WebsocketClient([; options...])
+```
+"""
 struct WebsocketClient
     config::NamedTuple
     callbacks::Dict{Symbol, Union{Bool, Function}}
@@ -18,7 +29,35 @@ struct WebsocketClient
         )
     end
 end
+"""
+    listen(server::Websocket.WebsocketClient, event::Symbol, callback::Function)
+Register event callbacks onto a client. The callback must be a function with exactly one argument.
 
+Valid events are:
+- :connect
+- :connectError
+
+!!! note ":connect"
+    Triggered when the client has successfully connected to the server
+
+    Returns a [`WebsocketConnection`](@ref Websocket-Connection) to the callback.
+    
+    ```julia
+    listen(client, :connect, ws::Websocket.WebsocketConnection -> (
+        begin
+            #...
+        end
+    ))
+    ```
+!!! note ":connectError"
+    Triggered when an attempt to open a client connection fails
+    ```julia
+    listen(client, :connectError, err::WebsocketError.ConnectError -> (
+        # err.msg::String
+        # err.log::Function -> logs the error message with stack trace
+    ))
+    ```
+"""
 function listen(
     self::WebsocketClient,
     key::Symbol,
@@ -142,4 +181,22 @@ function connect(
             startConnection(self, io)
         end
     end
+end
+"""
+    open(client::WebsocketClient, url::String [, headers::Dict{String, String}; options...])
+Open a new websocket client connection at the given `url`. Blocks until the connection is closed.
+
+Optionally provide custom `headers` for the http request.
+
+`; options...` are passed to the underlying [HTTP.request](https://juliaweb.github.io/HTTP.jl/stable/public_interface/#Requests-1)
+"""
+function Base.open(client::WebsocketClient, url::String, headers::Dict{String, String} = Dict{String, String}(); options...)
+    makeConnection(client, url, headers; options...)
+end
+"""
+    isopen(server::Websocket.WebsocketServer)::Bool
+Returns a Bool indication if the client TCP connection is open.
+"""
+function Base.isopen(client::WebsocketClient)
+    client.flags[:isopen]
 end

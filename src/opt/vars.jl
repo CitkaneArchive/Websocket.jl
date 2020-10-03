@@ -1,30 +1,72 @@
+"""
+# The default options for [`WebsocketClient`](@ref)
+!!! info "maxReceivedFrameSize"
+    `[1 * 0x100000 = 1MiB]::Integer`
+
+    The maximum frame size that the client will accept
+
+!!! info "maxReceivedMessageSize"
+    `[8 * 0x100000 = 8MiB]::Integer`
+
+    The maximum assembled message size that the client will accept
+
+!!! info "fragmentOutgoingMessages"
+    `[true]::Bool`
+
+    Outgoing frames are fragmented if they exceed the set threshold.
+
+!!! info "fragmentationThreshold"
+    `[16 * 0x0400 = 16KiB]::Integer`
+
+    Outgoing frames are fragmented if they exceed this threshold.
+
+!!! info "closeTimeout"
+    `[5]::Int`
+
+    The number of seconds to wait after sending a close frame for an acknowledgement to
+    return from the server. Will force close the connection if timed out.
+
+!!! info "keepaliveTimeout"
+    `[1]::Union{Int, Bool}`
+
+    The interval in number of seconds to solicit the server with a ping / pong
+    response. The connection will be closed if no pong is received within the interval.
+
+    The timer is only active when no data is received from the server within the interval,
+    ie. the server will only be pinged if inactive for a period longer than the interval.
+
+    `false` to disable.
+    !!! warning
+        Due to an underlying issue with [HTTP](https://juliaweb.github.io/HTTP.jl/stable/), 
+        a client network disconnect will cause the connection to block in it's listen loop, 
+        only registering `disconnect` when the network re-connects.
+
+        `keepaliveTimeout` uses ping/pong and will register a disconnect more efficiently
+        in network outage events.
+
+!!! info "useNagleAlgorithm"
+    `[false]::Bool`
+
+    The Nagle Algorithm makes more efficient use of network resources
+    by introducing a small delay before sending small packets so that
+    multiple messages can be batched together before going onto the
+    wire.  This however comes at the cost of latency, so the default
+    is to disable it.  If you don't need low latency and are streaming
+    lots of small messages, you can change this to `true`
+
+!!! info "binary"
+    `[false]::Bool`
+    
+    Use Array{UInt8, 1} instead of String as messaging format.
+"""
 const clientConfig = (
-    # 1MiB max frame size.
     maxReceivedFrameSize = 1 * 0x100000,
-    # 8MiB max assembled message size
     maxReceivedMessageSize = 8 * 0x100000,
-    # Outgoing messages larger than fragmentationThreshold will be
-    # split into multiple fragments.
     fragmentOutgoingMessages = true,
-    # Outgoing frames are fragmented if they exceed this threshold.
-    # Default is 16KiB
     fragmentationThreshold = 16 * 0x0400,
-    # The number of seconds to wait after sending a close frame
-    # for an acknowledgement to come back before giving up and just
-    # closing the socket.
     closeTimeout = 5,
-    # The interval in number of seconds to solicit a ping / pong response.
-    # The client will closed if no pong is received within the interval.
-    # `false` to disable
     keepaliveTimeout = 1,
-    #The Nagle Algorithm makes more efficient use of network resources
-    #by introducing a small delay before sending small packets so that
-    #multiple messages can be batched together before going onto the
-    #wire.  This however comes at the cost of latency, so the default
-    #is to disable it.  If you don't need low latency and are streaming
-    #lots of small messages, you can change this to 'true'
     useNagleAlgorithm = false,
-    #use binary Arrays instead of String as messaging format
     binary = false
 )
 """
@@ -89,7 +131,7 @@ const clientConfig = (
         a server network disconnect will cause all clients to block in their listen loop, 
         only registering `disconnect` when the network re-connects.
 
-        `keepaliveTimeout` uses ping/pong and will register client disconnects more efficiently
+        `keepaliveTimeout` uses ping/pong and will register the client disconnects more efficiently
         in network outage events.
 
 !!! info "useNagleAlgorithm"
@@ -120,12 +162,23 @@ const serverConfig = (
     useNagleAlgorithm = false,
     binary = false
 )
-
+"""
+    defaultHeaders::Dict{String, String}
+The default headers passed to a http upgrade request
+```julia
+Dict{String, String}(
+    "Sec-WebSocket-Version" => "13",
+    "Upgrade" => "websocket",
+    "Connection" => "Upgrade",
+    "Sec-WebSocket-Key" => "", #new key made for every request
+)
+```
+"""
 const defaultHeaders = Dict{String, String}(
     "Sec-WebSocket-Version" => "13",
     "Upgrade" => "websocket",
     "Connection" => "Upgrade",
-    "Sec-WebSocket-Key" => "constructed later",
+    "Sec-WebSocket-Key" => "",
 )
 const clientOptions = (;
     reuse_limit = 0,

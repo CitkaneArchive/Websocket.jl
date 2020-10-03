@@ -12,23 +12,6 @@ include("lib/WebsocketConnection.jl")
 include("lib/WebsocketClient.jl")
 include("lib/WebsocketServer.jl")
 
-function Base.open(client::WebsocketClient, url::String, headers::Dict{String, String} = Dict{String, String}();kwargs...)
-    makeConnection(client, url, headers; kwargs...)
-end
-function Base.isopen(client::WebsocketClient)
-    client.flags[:isopen]
-end
-
-function Base.close(ws::WebsocketConnection, reasonCode::Int = CLOSE_REASON_NORMAL, description::String = "")
-    closeConnection(ws, reasonCode, description)
-end
-
-function Base.broadcast(self::WebsocketConnection, data::Union{Array{UInt8,1}, String, Number})
-    self.clients === nothing && return
-    for client in self.clients
-        client.id !== self.id && send(client, data)
-    end
-end
 """
     logWSerror(err::Union{Exception, WebsocketError})
 A convenience method to lift errors into a scope and log them.
@@ -85,6 +68,4 @@ function throwWSerror(err::Exception)
     throw(err)
 end
 
-
 end
-

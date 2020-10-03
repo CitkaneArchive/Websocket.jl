@@ -97,7 +97,7 @@ struct CallbackError <: WebsocketError
 end
 """
     struct FrameError <: WebsocketError
-An exception originated while parsing a websocket frame
+An exception originated while parsing a websocket data frame
 """
 struct FrameError <: WebsocketError
     msg::String

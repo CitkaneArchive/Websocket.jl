@@ -1,7 +1,7 @@
 """
     WebsocketServer([; options...])
 
-Constructs a new WebsocketServer, overriding the passed options in [`serverConfig`](@ref).
+Constructs a new WebsocketServer, overriding [`serverConfig`](@ref) with the passed options.
 
 # Example
 ```julia
@@ -57,6 +57,9 @@ Valid events are:
     ```
 !!! note ":client"
     Triggered when a client connects to the server
+
+    Returns a [`WebsocketConnection`](@ref Websocket-Connection) to the callback.
+
     ```julia
     listen(server, :client, client::WebsocketConnection -> (
         begin
