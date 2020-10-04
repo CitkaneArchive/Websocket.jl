@@ -1,3 +1,19 @@
+function wsclient(client, port::Int = 8080, url::String = "ws://localhost")
+    ended = Condition()
+    listen(client, :connectError, err -> (
+        notify(ended, err)
+    ))
+    listen(client, :connect, ws -> (
+        begin
+            listen(ws, :close, reason -> (
+                notify(ended, reason)
+            ))
+        end
+    ))
+    @async open(client, "$url:$port"; require_ssl_verification = false)
+    wait(ended)
+end
+
 function clientconnects(client, port::Int = 8080, url::String = "ws://localhost")
     ended = Condition()
     listen(client, :connectError, err -> (

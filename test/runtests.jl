@@ -5,11 +5,13 @@ include("testclients.jl")
 
 @testset "Websocket.jl" begin
     @info "Testing Websocket.jl"
-    server = @test_nowarn WebsocketServer()
-    client = @test_nowarn WebsocketClient()
+    @test_nowarn WebsocketServer()
+    @test_nowarn WebsocketClient()
 
+    server1 = WebsocketServer()
+    client = WebsocketClient()
     @suppress begin
-        @test_nowarn listen(server, :invalidlistener, () -> ())
+        @test_nowarn listen(server1, :invalidlistener, () -> ())
         @test_nowarn listen(client, :invalidlistener, () -> ())
     end
 
@@ -21,14 +23,14 @@ include("testclients.jl")
     @testset "Server listens and closes" begin
         @info "Server listens and closes"
         for config in [(; ssl = false), (; ssl = true)]
-            server = WebsocketServer(; config...)
-            details = @test_nowarn servercanlisten(server, 8080)
+            server2 = WebsocketServer(; config...)
+            details = @test_nowarn servercanlisten(server2, 8080)
             @test details isa NamedTuple
             @test haskey(details, :port)
             @test haskey(details, :host)
             @test details.port === 8080
             @test details.host === getaddrinfo("localhost")
-            @test !isopen(server)
+            @test !isopen(server2)
         end
     end
 
@@ -38,8 +40,8 @@ include("testclients.jl")
             (; server = (; ssl = false,), client = (; url = "ws://localhost",)),
             (; server = (; ssl = true,), client = (; url = "wss://localhost",))
         ]
-            server = WebsocketServer(; config.server...)
-            @test_nowarn echoserver(server, 8080)
+            server3 = WebsocketServer(; config.server...)
+            @test_nowarn echoserver(server3, 8080)
             client = WebsocketClient()
             @suppress begin
                 closed = @test_nowarn clientconnects(client, 8080, config.client.url)
@@ -49,8 +51,8 @@ include("testclients.jl")
                 @test haskey(closed, :description)
                 @test closed.code === 1000
                 @test closed.description === "Normal connection closure"
-                @test length(server) === 0
-                @test_nowarn close(server)
+                @test length(server3) === 0
+                @test_nowarn close(server3)
             end
         end
     end
@@ -69,28 +71,28 @@ include("testclients.jl")
         )...
         for binary in [true, false]
             @info "Testing $(binary ? "binary" : "text") server."
-            server = WebsocketServer(; binary = binary)
-            echoserver(server, 8080)
+            local server4 = WebsocketServer(; binary = binary)
+            echoserver(server4, 8080)
             count = 0
             @sync for clientbinary in [true, false]
+                count += 1
                 @info "Opening $(clientbinary ? "binary" : "text") client $count"
-                client = WebsocketClient(; binary = clientbinary)
+                local client = WebsocketClient(; binary = clientbinary)
                 @async begin
-                    closed = echoclient(client, 8080; server.config...)
+                    closed = echoclient(client, 8080; server4.config...)
                     @test !isopen(client)
                     @test closed.code === 1000
                     @test closed.description === "Normal connection closure"
                 end
             end
-            @suppress begin
-                close(server)
-            end
+            close(server4)
         end
         @info "...Done"
     end
+
     @testset "Server client feedback" begin
-        server = WebsocketServer()
-        echoserver(server, 8080)
+        server5 = WebsocketServer()
+        echoserver(server5, 8080)
 
         @testset "ping pong" begin
             @info "ping pong"
@@ -98,7 +100,7 @@ include("testclients.jl")
             closed = pingclient(client, 8080)
             @test closed === "testping"
             @test !isopen(client)
-            @test isopen(server)
+            @test isopen(server5)
         end
         
         @testset "Server rejects clients with bad payloads" begin
@@ -108,13 +110,13 @@ include("testclients.jl")
             @test closed.code === 1009
             @test closed.description === "Maximum message size of 1048576 Bytes exceeded"
             @test !isopen(client)
-            @test isopen(server)
+            @test isopen(server5)
             client = WebsocketClient(; fragmentOutgoingMessages = false)
             closed = badclient(client, 8080)
             @test closed.code === 1008
             @test closed.description === "frame size exceeds maximum of 65536 Bytes."
             @test !isopen(client)
-            @test isopen(server)
+            @test isopen(server5)
         end
 
         @testset "Client times out" begin
@@ -124,9 +126,33 @@ include("testclients.jl")
             @test closed.code === 1006
             @test closed.description === "could not ping the server."
             @test !isopen(client)
-            @test isopen(server)
-            close(server)
-            sleep(0.1)
+            @test isopen(server5)
+            close(server5)
+        end
+
+        server6 = WebsocketServer()
+        echoserver(server6, 8080)
+
+        @testset "server gracefully closes clients and exits" begin
+            @info "server gracefully closes clients and exits"         
+            client = WebsocketClient()
+            client2 = WebsocketClient()
+            local reason, reason2
+            @async reason = wsclient(client)
+            @async reason2 = wsclient(client2)
+            while length(server6) < 2
+                sleep(0.1)
+            end
+            @test length(server6) === 2
+            close(server6)
+
+            @test !isopen(client)
+            @test !isopen(client2)
+            @test !isopen(server6)
+            for r in [reason, reason2]
+                @test r.code === 1001
+                @test r.description === "Remote peer is going away"
+            end
         end
     end
 end

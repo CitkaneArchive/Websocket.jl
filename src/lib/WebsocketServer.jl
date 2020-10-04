@@ -234,6 +234,9 @@ function Base.close(self::WebsocketServer)
         end
     end
     close(self.server[:server])
+    while isopen(self.server[:server]) || isopen(self)
+        sleep(0.1)
+    end
 end
 """
     isopen(server::Websocket.WebsocketServer)::Bool
