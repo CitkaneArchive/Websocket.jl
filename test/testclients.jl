@@ -5,6 +5,7 @@ function clientconnects(client, port::Int = 8080, url::String = "ws://localhost"
     ))
     listen(client, :connect, ws -> (
         begin
+            listen(ws, :invalidlistener, () -> ())
             listen(ws, :close, reason -> (
                 notify(ended, reason)
             ))
@@ -70,6 +71,37 @@ function badclient(client, port::Int = 8080, url::String = "ws://localhost")
                 end
             ))
             send(ws, "This is a test.")
+        end
+    ))
+    @async open(client, "$url:$port"; require_ssl_verification = false)
+    wait(ended)
+end
+
+function timeoutclient(client, port::Int = 8080, url::String = "ws://localhost")
+    ended = Condition()
+    listen(client, :connect, ws -> (
+        begin
+            listen(ws, :close, reason -> (
+                notify(ended, reason)
+            ))
+            ws.keepalive[:pingmessage] = "death"
+        end
+    ))
+    @async open(client, "$url:$port"; require_ssl_verification = false)
+    wait(ended)
+end
+
+function pingclient(client, port::Int = 8080, url::String = "ws://localhost")
+    ended = Condition()
+    listen(client, :connect, ws -> (
+        begin
+            listen(ws, :pong, message -> (
+                close(ws, 1000, message)
+            ))
+            listen(ws, :close, reason -> (
+                notify(ended, reason.description)
+            ))
+            ping(ws, "testping")
         end
     ))
     @async open(client, "$url:$port"; require_ssl_verification = false)

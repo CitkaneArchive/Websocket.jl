@@ -4,7 +4,7 @@ module Websocket
 using HTTP, Base64, Sockets, MbedTLS
 import Sockets: listen
 
-export WebsocketServer, WebsocketClient, WebsocketConnection, WebsocketError, serve, send, listen, emit, logWSerror, ping
+export WebsocketServer, WebsocketClient, WebsocketConnection, WebsocketError, serve, send, ping, listen, emit, throwWSerror, logWSerror
 
 include("opt/vars.jl")
 include("opt/utils.jl")
@@ -62,7 +62,7 @@ reason isa Exception && throwWSerror(reason)
 """
 function throwWSerror(err::WebsocketError)
     err.log()
-    exit()
+    throw(err)
 end
 function throwWSerror(err::Exception)
     throw(err)

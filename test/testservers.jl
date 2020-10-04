@@ -1,6 +1,6 @@
 function servercanlisten(server::WebsocketServer, port::Int = 8080)
     ended = Condition()
-
+    
     listen(server, :connectError,  err -> (
         notify(ended, err.msg)
     ))

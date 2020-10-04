@@ -20,17 +20,19 @@ reason = Closereason(0, "[1000]parsed description")
 @test reason.valid
 
 @debug "WebsocketError"
-for errtype in [ConnectError, CallbackError, FrameError]
+for errtype in [Websocket.ConnectError, Websocket.CallbackError, Websocket.FrameError]
     try
         1 ÷ 0
     catch err
         @suppress_err begin
             @test_nowarn logWSerror(err)
+            @test_throws Exception throwWSerror(err)
             err = errtype(err, catch_backtrace())
-            @test err isa WebsocketError
+            @test err isa errtype
             @test err.msg === "DivideError"
             @test_nowarn err.log()
             @test_nowarn logWSerror(err)
+            @test_throws errtype throwWSerror(err)
         end
     end
 end

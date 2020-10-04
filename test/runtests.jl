@@ -5,8 +5,13 @@ include("testclients.jl")
 
 @testset "Websocket.jl" begin
     @info "Testing Websocket.jl"
-    @test_nowarn WebsocketServer()
-    @test_nowarn WebsocketClient()
+    server = @test_nowarn WebsocketServer()
+    client = @test_nowarn WebsocketClient()
+
+    @suppress begin
+        @test_nowarn listen(server, :invalidlistener, () -> ())
+        @test_nowarn listen(client, :invalidlistener, () -> ())
+    end
 
     @testset "Unit Tests" begin
         @info "Unit Tests"
@@ -27,8 +32,8 @@ include("testclients.jl")
         end
     end
 
-    @testset "Client connects and disconnects" begin
-        @info "Client connects and disconnects"
+    @testset "Client connects and disconnects on ws and wss" begin
+        @info "Client connects and disconnects on ws and wss"
         for config in [
             (; server = (; ssl = false,), client = (; url = "ws://localhost",)),
             (; server = (; ssl = true,), client = (; url = "wss://localhost",))
@@ -36,15 +41,17 @@ include("testclients.jl")
             server = WebsocketServer(; config.server...)
             @test_nowarn echoserver(server, 8080)
             client = WebsocketClient()
-            closed = @test_nowarn clientconnects(client, 8080, config.client.url)
-            @test !isopen(client)
-            @test closed isa NamedTuple
-            @test haskey(closed, :code)
-            @test haskey(closed, :description)
-            @test closed.code === 1000
-            @test closed.description === "Normal connection closure"
-            @test length(server) === 0
-            @suppress @test_nowarn close(server)
+            @suppress begin
+                closed = @test_nowarn clientconnects(client, 8080, config.client.url)
+                @test !isopen(client)
+                @test closed isa NamedTuple
+                @test haskey(closed, :code)
+                @test haskey(closed, :description)
+                @test closed.code === 1000
+                @test closed.description === "Normal connection closure"
+                @test length(server) === 0
+                @test_nowarn close(server)
+            end
         end
     end
     @testset "Client passes connection errors to callback handler" begin
@@ -75,28 +82,51 @@ include("testclients.jl")
                     @test closed.description === "Normal connection closure"
                 end
             end
-            @suppress close(server)
+            @suppress begin
+                close(server)
+            end
         end
         @info "...Done"
     end
-
-    @testset "Server rejects clients with bad payloads" begin
-        @info "Server rejects clients with bad payloads"
+    @testset "Server client feedback" begin
         server = WebsocketServer()
         echoserver(server, 8080)
-        client = WebsocketClient()
-        closed = badclient(client, 8080)
-        @test closed.code === 1009
-        @test closed.description === "Maximum message size of 1048576 Bytes exceeded"
-        @test !isopen(client)
-        @test isopen(server)
-        client = WebsocketClient(; fragmentOutgoingMessages = false)
-        closed = badclient(client, 8080)
-        @test closed.code === 1008
-        @test closed.description === "frame size exceeds maximum of 65536 Bytes."
-        @test !isopen(client)
-        @test isopen(server)
-        close(server)
-        sleep(0.1)
+
+        @testset "ping pong" begin
+            @info "ping pong"
+            client = WebsocketClient()
+            closed = pingclient(client, 8080)
+            @test closed === "testping"
+            @test !isopen(client)
+            @test isopen(server)
+        end
+        
+        @testset "Server rejects clients with bad payloads" begin
+            @info "Server rejects clients with bad payloads"           
+            client = WebsocketClient()
+            closed = badclient(client, 8080)
+            @test closed.code === 1009
+            @test closed.description === "Maximum message size of 1048576 Bytes exceeded"
+            @test !isopen(client)
+            @test isopen(server)
+            client = WebsocketClient(; fragmentOutgoingMessages = false)
+            closed = badclient(client, 8080)
+            @test closed.code === 1008
+            @test closed.description === "frame size exceeds maximum of 65536 Bytes."
+            @test !isopen(client)
+            @test isopen(server)
+        end
+
+        @testset "Client times out" begin
+            @info "Client times out"
+            client = WebsocketClient()
+            closed = timeoutclient(client, 8080)
+            @test closed.code === 1006
+            @test closed.description === "could not ping the server."
+            @test !isopen(client)
+            @test isopen(server)
+            close(server)
+            sleep(0.1)
+        end
     end
 end
