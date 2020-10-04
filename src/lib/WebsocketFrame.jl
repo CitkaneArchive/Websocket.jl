@@ -66,7 +66,7 @@ function toBuffer(self::WebsocketFrame)
 
     if inf[:mask]
         seekstart(maskBytes)
-        write(maskBytes, 0xbca591bb)
+        write(maskBytes, hton(rand(UInt32)))
         seekstart(maskBytes)
         write(outBuffer, maskBytes)
         mask!(maskBytes, inf[:binaryPayload])

@@ -1,7 +1,6 @@
 coveralls: true
 language: julia
 julia:
-  - nightly
   - 1.0.5
   - 1
 os:

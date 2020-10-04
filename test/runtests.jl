@@ -4,15 +4,17 @@ include("testservers.jl")
 include("testclients.jl")
 
 @testset "Websocket.jl" begin
-
-    @testset "Unit Tests" begin
-        include("unittests.jl")
-    end
-
+    @info "Testing Websocket.jl"
     @test_nowarn WebsocketServer()
     @test_nowarn WebsocketClient()
 
+    @testset "Unit Tests" begin
+        @info "Unit Tests"
+        include("unittests.jl")
+    end
+
     @testset "Server listens and closes" begin
+        @info "Server listens and closes"
         for config in [(; ssl = false), (; ssl = true)]
             server = WebsocketServer(; config...)
             details = @test_nowarn servercanlisten(server, 8080)
@@ -26,6 +28,7 @@ include("testclients.jl")
     end
 
     @testset "Client connects and disconnects" begin
+        @info "Client connects and disconnects"
         for config in [
             (; server = (; ssl = false,), client = (; url = "ws://localhost",)),
             (; server = (; ssl = true,), client = (; url = "wss://localhost",))
@@ -45,8 +48,8 @@ include("testclients.jl")
         end
     end
     @testset "Client passes connection errors to callback handler" begin
-        client = WebsocketClient()
         @info "Client passes connection errors to callback handler" wait = "wait for socket to timeout..."
+        client = WebsocketClient()
         err = clientconnects(client, 8080, "ws://badurl.bad")
         @test err isa Websocket.ConnectError
         @test err.msg === "Sockets.DNSError"
@@ -78,6 +81,7 @@ include("testclients.jl")
     end
 
     @testset "Server rejects clients with bad payloads" begin
+        @info "Server rejects clients with bad payloads"
         server = WebsocketServer()
         echoserver(server, 8080)
         client = WebsocketClient()
