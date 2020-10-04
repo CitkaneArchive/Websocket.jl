@@ -65,7 +65,14 @@ The `log()` function will internally call: @error msg  exception = (err, trace)
 Where `trace` is the backtrace of the exception origin.
 """
 abstract type WebsocketError <: Exception end
-msg(err::Exception) = (hasfield(typeof(err), :msg) ? err.msg : string(typeof(err)))
+function msg(err::Exception)
+    try
+        return err.msg
+    catch
+        return string(typeof(err))
+    end
+    # hasfield(typeof(err), :msg) ? err.msg : string(typeof(err)) #hasfield needs julia >= 1.2
+end
 logError(self::Exception, err::Exception, trace::Array) = @error string(typeof(self))*"(\"$(self.msg)\")" exception = (err, trace)
 """
     struct ConnectError <: WebsocketError 

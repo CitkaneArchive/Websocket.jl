@@ -251,6 +251,12 @@ send(self::WebsocketConnection, data::String) = send(self, textbuffer(data))
 function send(self::WebsocketConnection, data::Array{UInt8,1})
     @debug "WebsocketConnection.send"
     try
+
+        #BUGFIX
+        #Julia version < 1.2 gets confused with allocation under fringe circumstances
+            VERSION < v"1.2.0" && (data = copy(data))
+        #END
+        
         frame = WebsocketFrame(self.config, self.buffers, data)
         frame.inf[:opcode] = self.config.binary ? BINARY_FRAME : TEXT_FRAME
         fragmentAndSend(self, frame)
@@ -342,10 +348,26 @@ function fragmentAndSend(self::WebsocketConnection, frame::WebsocketFrame)
 end
 
 function sendFrame(self::WebsocketConnection, frame::WebsocketFrame)
-    @debug "WebsocketConnection.sendFrame"
     frame.inf[:mask] = self.config.maskOutgoingPackets
-    !toBuffer(frame) && return
+
+    proceed = toBuffer(frame)
+
     outBuffer = self.buffers.outBuffer
+    @debug "WebsocketConnection.sendFrame" (;
+        type = self.config.type,
+        message = String(copy(frame.inf[:binaryPayload])),
+        id = self.id,
+        proceed = proceed,
+        ptr = outBuffer.ptr,
+        buffersize = outBuffer.size,
+        parseState = frame.inf[:parseState],
+        opcode = frame.inf[:opcode],
+        length = Int(frame.inf[:length]),
+        fin = frame.inf[:fin],
+        mask = frame.inf[:mask],
+    )...
+
+    !proceed && return   
     isopen(self.io[:stream]) && write(self.io[:stream], outBuffer)
 end
 # End send data
@@ -357,14 +379,18 @@ function processReceivedData(self::WebsocketConnection)
 
     continued = addData(frame)
 
-    @debug "processRecievedData" (;
+    @debug "WebsocketConnection.processReceivedData" (;
+        type = self.config.type,
+        message = String(copy(frame.inf[:binaryPayload])),
+        id = self.id,
         continued = continued,
         ptr = inBuffer.ptr,
         buffersize = inBuffer.size,
         parseState = frame.inf[:parseState],
         opcode = frame.inf[:opcode],
-        length = frame.inf[:length],
-        fin = frame.inf[:fin]
+        length = Int(frame.inf[:length]),
+        fin = frame.inf[:fin],
+        mask = frame.inf[:mask],
     )...
 
     !continued && return

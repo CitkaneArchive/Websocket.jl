@@ -93,5 +93,6 @@ include("testclients.jl")
         @test !isopen(client)
         @test isopen(server)
         close(server)
+        sleep(0.1)
     end
 end

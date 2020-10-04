@@ -16,7 +16,8 @@ struct WebsocketClient
 
     function WebsocketClient(; config...)
         @debug "WebsocketClient"
-        config = merge(clientConfig, (; config...), (; maskOutgoingPackets = true, type = "client"))
+        config = merge(clientConfig, (; config...))
+        config = merge(config, (; maskOutgoingPackets = true, type = "client") )
         self = new(
             config,
             Dict{Symbol, Union{Bool, Function}}(
@@ -168,7 +169,7 @@ function connect(
             options...
         ) do io
             tcp = io.stream.c.io isa TCPSocket ? io.stream.c.io : io.stream.c.io.bio
-            Sockets.nagle(tcp, config.useNagleAlgorithm)
+            VERSION >= v"1.3" && Sockets.nagle(tcp, config.useNagleAlgorithm) #Sockets.nagle needs Julia >= 1.3
             try
                 request = startread(io)
                 validateHandshake(headers, request)

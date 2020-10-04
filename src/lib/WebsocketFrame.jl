@@ -29,6 +29,7 @@ struct WebsocketFrame
 end
 
 function toBuffer(self::WebsocketFrame)
+
     outBuffer = self.buffers.outBuffer
     !isopen(outBuffer) && return false
     truncate(outBuffer, 0)
@@ -46,6 +47,7 @@ function toBuffer(self::WebsocketFrame)
     end
 
     len = length(inf[:binaryPayload])
+
     if len <= 125
         secondByte |= (len & 0x7F)
     elseif len > 125 && len <= 0xFFFF
@@ -64,12 +66,12 @@ function toBuffer(self::WebsocketFrame)
 
     if inf[:mask]
         seekstart(maskBytes)
-        write(maskBytes, hton(rand(UInt32)))
+        write(maskBytes, 0xbca591bb)
         seekstart(maskBytes)
         write(outBuffer, maskBytes)
         mask!(maskBytes, inf[:binaryPayload])
-
     end
+
     unsafe_write(outBuffer, pointer(inf[:binaryPayload]), len)
     seek(outBuffer, 0)
     return true

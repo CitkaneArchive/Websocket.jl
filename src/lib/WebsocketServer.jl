@@ -17,7 +17,8 @@ struct WebsocketServer
 
     function WebsocketServer(; config...)
         @debug "WebsocketClient"
-        config = merge(serverConfig, (; config...), (; maskOutgoingPackets = false, type = "server",))
+        config = merge(serverConfig, (; config...))
+        config = merge(config, (; maskOutgoingPackets = false, type = "server",))
         self = new(
             config,
             Dict{Symbol, Union{Bool, Function}}(
@@ -153,7 +154,9 @@ function serve(self::WebsocketServer, port::Int = 8080, host::String = "localhos
         callback = self.callbacks[:client]
         callback === false && throw(error("tried to bind the server before registering \":client\" handler"))
         self.server[:server] = Sockets.listen(host, port)
-        Sockets.nagle(self.server[:server], config.useNagleAlgorithm)
+        
+        VERSION >= v"1.3" && Sockets.nagle(self.server[:server], config.useNagleAlgorithm) #Sockets.nagle needs Julia >= 1.3
+
         self.flags[:isopen] = true
         if self.callbacks[:listening] isa Function
             self.callbacks[:listening]((; port = port, host = host))
@@ -186,7 +189,7 @@ function serve(self::WebsocketServer, port::Int = 8080, host::String = "localhos
         end
     catch err
         self.flags[:isopen] = false
-        if typeof(err) === Base.IOError && err.msg === "accept: software caused connection abort (ECONNABORTED)"
+        if typeof(err) === Base.IOError && occursin("software caused connection abort", err.msg)
             callback = self.callbacks[:closed]
             if callback isa Function
                 callback((; host = host, port = port))

@@ -28,7 +28,8 @@ function echoclient(client, port::Int = 8080, url::String = "ws://localhost"; co
                     if length(message) < config.maxReceivedMessageSize
                         mstring = message
                         !(message isa String) && (mstring = String(copy(message)))
-                        if !startswith(mstring, "This is a test.") && endswith(mstring, "This is a test.")
+                        if !startswith(mstring, "This") || !endswith(mstring, "test.")
+                            @error "$(ws.id) : $(message isa String ? "string" : "binary") : $(length(message)) : $(Int(config.maxReceivedMessageSize))" message = message
                             throw(error("bad message format"))
                         end
                         if message isa String
@@ -47,6 +48,7 @@ function echoclient(client, port::Int = 8080, url::String = "ws://localhost"; co
                     end
                 end
             ))
+            #send(ws, "This $(ws.id) test.")
             send(ws, "This is a test.")
         end
     ))

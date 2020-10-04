@@ -53,6 +53,8 @@
     wire.  This however comes at the cost of latency, so the default
     is to disable it.  If you don't need low latency and are streaming
     lots of small messages, you can change this to `true`
+    !!! info "Julia 1.3"
+        This setting only has an affect as of Julia 1.3
 
 !!! info "binary"
     `[false]::Bool`
@@ -143,6 +145,9 @@ const clientConfig = (
     wire.  This however comes at the cost of latency, so the default
     is to disable it.  If you don't need low latency and are streaming
     lots of small messages, you can change this to `true`
+
+    !!! info "Julia 1.3"
+        This setting only has an affect as of Julia 1.3
 
 !!! info "binary"
     `[false]::Bool`
