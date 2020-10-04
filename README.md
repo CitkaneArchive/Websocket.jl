@@ -1,5 +1,10 @@
-# Websocket
+# Websocket 
+[![Build Status](https://travis-ci.org/citkane/Websocket.jl.svg?branch=master)](https://travis-ci.org/citkane/Websocket.jl)
+[![Coverage Status](https://coveralls.io/repos/github/citkane/Websocket.jl/badge.svg?branch=master)](https://coveralls.io/github/citkane/Websocket.jl?branch=master)
 
+A flexible, powerful, high level interface for Websockets in Julia. Provides a SERVER and CLIENT.
+
+[DOCUMENTATION](https://juliahub.com/docs/Websocket)
 ## Basic usage server:
 
 ```julia
