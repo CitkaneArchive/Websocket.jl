@@ -29,6 +29,6 @@ isopen(::WebsocketClient)
 ## Client Events
 Client event callback functions are registered using the `listen` method.
 ```@docs
-listen(::WebsocketClient, ::Symbol, ::Function)
+listen(::Function, ::WebsocketClient, ::Symbol)
 ```
 

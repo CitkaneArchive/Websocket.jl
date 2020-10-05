@@ -1,7 +1,7 @@
 # Websocket Connection
 A `WebsocketConnection` type is not directly constructed by the user. it can exist in two contexts:
-- SERVER [`listen`](@ref listen(::WebsocketServer, ::Symbol, ::Function)) `:client` event.
-- CLIENT [`listen`](@ref listen(::WebsocketClient, ::Symbol, ::Function)) `:connect` event.
+- SERVER [`listen`](@ref listen(::Function, ::WebsocketServer, ::Symbol)) `:client` event.
+- CLIENT [`listen`](@ref listen(::Function, ::WebsocketClient, ::Symbol)) `:connect` event.
 Typical SERVER:
 ```julia
 using Websocket
@@ -32,5 +32,5 @@ close(::WebsocketConnection, ::Int, ::String)
 ## `WebsocketConnection` Events
 `WebsocketConnection` event callback functions are registered using the `listen` method.
 ```@docs
-listen(::WebsocketConnection, ::Symbol, ::Function)
+listen(::Function, ::WebsocketConnection, ::Symbol)
 ```

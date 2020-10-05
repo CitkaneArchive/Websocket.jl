@@ -30,5 +30,5 @@ length(::WebsocketServer)
 ## Server Events
 Server event callback functions are registered using the `listen` method.
 ```@docs
-listen(::WebsocketServer, ::Symbol, ::Function)
+listen(::Function, ::WebsocketServer, ::Symbol)
 ```
