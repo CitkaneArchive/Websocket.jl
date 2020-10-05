@@ -11,8 +11,8 @@ include("testclients.jl")
     server1 = WebsocketServer()
     client = WebsocketClient()
     @suppress begin
-        @test_nowarn listen(server1, :invalidlistener, () -> ())
-        @test_nowarn listen(client, :invalidlistener, () -> ())
+        @test_nowarn listen(server1, :invalidlistener) do noop end
+        @test_nowarn listen(client, :invalidlistener) do noop end
     end
 
     @testset "Unit Tests" begin

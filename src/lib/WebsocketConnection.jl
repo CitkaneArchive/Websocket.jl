@@ -100,7 +100,7 @@ struct WebsocketConnection
     end
 end
 """
-    listen(ws::Websocket.WebsocketConnection, event::Symbol, callback::Function)
+    listen(callback::Function, ws::Websocket.WebsocketConnection, event::Symbol)
 Register event callbacks onto a `WebsocketConnection`. The callback must be a function with exactly one argument.
 
 Valid events are:
@@ -112,42 +112,38 @@ Valid events are:
 !!! note ":message"
     Triggered when the TCP stream receives a message
     ```julia
-    listen(ws::WebsocketConnection, :message, message::Union{String, Array{UInt8, 1}} -> (
-        begin
-            #...
-        end
-    ))
+    listen(ws::WebsocketConnection, :message) do message::Union{String, Array{UInt8, 1}}
+        #...
+    end
     ```
 !!! note ":pong"
     Triggered when the TCP stream receives a pong response
     ```julia
-    listen(ws::WebsocketConnection, :pong, message::Union{String, Array{UInt8, 1}} -> (
-        begin
-            #...
-        end
-    ))
+    listen(ws::WebsocketConnection, :pong) do message::Union{String, Array{UInt8, 1}}
+        #...
+    end
     ```
 !!! note ":error"
     Triggered when an error occurs during data processing
     ```julia
-    listen(ws::WebsocketConnection, :error, err::Union{WebsocketError.FrameError, WebsocketError.CallbackError} -> (
+    listen(ws::WebsocketConnection, :error) do err::Union{WebsocketError.FrameError, WebsocketError.CallbackError}
         # err.msg::String
-        # err.log::Function -> logs the error message with stack trace
-    ))
+        # err.log::Function > logs the error message with stack trace
+    end
     ```
 !!! note ":close"
     Triggered when the underlying TCP stream has closed
     ```julia
-    listen(ws::WebsocketConnection, :close, reason::NamedTuple -> (
+    listen(ws::WebsocketConnection, :close) do reason::NamedTuple
         # reason.code::Int
         # reason.description::String
-    ))
+    end
     ```
 """
 function listen(
+    cb::Function,
     self::WebsocketConnection,
-    key::Symbol,
-    cb::Function
+    key::Symbol   
 )
     if !haskey(self.callbacks, key)
         return @warn "WebsocketConnection has no listener for :$key."

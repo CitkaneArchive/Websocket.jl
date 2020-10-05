@@ -7,9 +7,9 @@ Typical SERVER:
 using Websocket
 
 server = WebsocketServer()
-listen(server, :client, client::WebsocketConnection -> (
+listen(server, :client) do client::WebsocketConnection
     # do logic with the `WebsocketConnection`
-))
+end
 serve(server)
 ```
 Typical CLIENT
@@ -17,9 +17,9 @@ Typical CLIENT
 using Websocket
 
 client = WebsocketClient()
-listen(client, :connect, ws::WebsocketConnection -> (
+listen(client, :connect) do ws::WebsocketConnection
     # do logic with the `WebsocketConnection`
-))
+end
 open(client, "ws://url.url")
 ```
 ## `WebsocketConnection` Methods

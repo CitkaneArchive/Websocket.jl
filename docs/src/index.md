@@ -11,26 +11,20 @@ using Websocket
 server = WebsocketServer()
 ended = Condition() 
 
-listen(server, :client, client -> (
-    listen(client, :message, message -> (
-        begin
-            @info "Got a message" client = client.id message = message
-            send(client, "Echo back at you: $message")
-        end
-    ))
-))
-listen(server, :connectError, err -> (
-    begin
-        logWSerror(err)
-        notify(ended, err.msg, error = true)
-    end    
-))
-listen(server, :closed, details -> (
-    begin
-        @warn "Server has closed" details...
-        notify(ended)
+listen(server, :client) do client
+    listen(client, :message) do message
+        @info "Got a message" client = client.id message = message
+        send(client, "Echo back at you: $message")
     end
-))
+end
+listen(server, :connectError) do err
+    logWSerror(err)
+    notify(ended, err.msg, error = true)
+end
+listen(server, :closed) do details
+    @warn "Server has closed" details...
+    notify(ended)
+end
 
 @async serve(server; verbose = true)
 wait(ended)
@@ -42,30 +36,24 @@ using Websocket
 client = WebsocketClient()
 ended = Condition()
 
-listen(client, :connect, ws -> (
-    begin
-        listen(ws, :message, message -> (
-            @info message
-        ))
-        listen(ws, :close, reason -> (
-            begin
-                @warn "Websocket connection closed" reason...
-                notify(ended)
-            end
-        ))
-        for count = 1:10
-            send(ws, "hello $count")
-            sleep(1)
-        end
-        close(ws)
+listen(client, :connect) do ws
+    listen(ws, :message) do message
+        @info message
     end
-))
-listen(client, :connectError, err -> (
-    begin
-        logWSerror(err)
-        notify(ended, err.msg, error = true)
+    listen(ws, :close) do reason
+        @warn "Websocket connection closed" reason...
+        notify(ended)
     end
-))
+    for count = 1:10
+        send(ws, "hello $count")
+        sleep(1)
+    end
+    close(ws)
+end
+listen(client, :connectError) do err
+    logWSerror(err)
+    notify(ended, err.msg, error = true)
+end
 
 @async open(client, "ws://localhost:8080")
 wait(ended)

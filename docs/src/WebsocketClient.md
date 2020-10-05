@@ -10,7 +10,9 @@ using Websocket
 
 client = WebsocketClient()
 
-listen(client, :connect, ws::WebsocketConnection -> ()) #must be called before `open`
+listen(client, :connect) do ws::WebsocketConnection #must be called before `open`
+    #...
+end
 
 open(client, "ws://url.url")
 ```

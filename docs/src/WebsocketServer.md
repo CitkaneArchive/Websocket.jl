@@ -9,8 +9,9 @@ using Websocket
 
 server = WebsocketServer()
 
-listen(server, :client, client::WebsocketConnection -> ()) #must be called before `serve`
-
+listen(server, :client) do client::WebsocketConnection #must be called before `serve`
+    #...
+end
 serve(server)
 ```
 

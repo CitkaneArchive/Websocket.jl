@@ -22,10 +22,10 @@ using Websocket
 server = WebsocketServer()
 ended = Condition()
 
-listen(server, :client, client -> ())
-listen(server, :connectError, err::WebsocketError -> (
+listen(server, :client) do client end
+listen(server, :connectError) do err::WebsocketError
     notify(ended, err)
-))
+end
 
 @async serve(server, 8080, "notahost")
 
@@ -49,10 +49,10 @@ using Websocket
 server = WebsocketServer()
 ended = Condition()
 
-listen(server, :client, client -> ())
-listen(server, :connectError, err::WebsocketError -> (
+listen(server, :client) do client end
+listen(server, :connectError) do err::WebsocketError
     notify(ended, err)
-))
+end
 
 @async serve(server, 8080, "notahost")
 

@@ -31,7 +31,7 @@ struct WebsocketClient
     end
 end
 """
-    listen(server::Websocket.WebsocketClient, event::Symbol, callback::Function)
+    listen(callback::Function, server::Websocket.WebsocketClient, event::Symbol)
 Register event callbacks onto a client. The callback must be a function with exactly one argument.
 
 Valid events are:
@@ -44,25 +44,23 @@ Valid events are:
     Returns a [`WebsocketConnection`](@ref Websocket-Connection) to the callback.
     
     ```julia
-    listen(client, :connect, ws::Websocket.WebsocketConnection -> (
-        begin
-            #...
-        end
-    ))
+    listen(client, :connect) do ws::Websocket.WebsocketConnection
+        #...
+    end
     ```
 !!! note ":connectError"
     Triggered when an attempt to open a client connection fails
     ```julia
-    listen(client, :connectError, err::WebsocketError.ConnectError -> (
+    listen(client, :connectError) do err::WebsocketError.ConnectError
         # err.msg::String
-        # err.log::Function -> logs the error message with stack trace
-    ))
+        # err.log::Function > logs the error message with stack trace
+    end
     ```
 """
 function listen(
+    cb::Function,
     self::WebsocketClient,
-    key::Symbol,
-    cb::Function
+    key::Symbol   
 )
     if !haskey(self.callbacks, key)
         return @warn "WebsocketClient has no listener for :$key."

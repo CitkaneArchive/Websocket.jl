@@ -39,7 +39,7 @@ struct WebsocketServer
 
 end
 """
-    listen(server::Websocket.WebsocketServer, event::Symbol, callback::Function)
+    listen(callback::Function, server::Websocket.WebsocketServer, event::Symbol)
 Register event callbacks onto a server. The callback must be a function with exactly one argument.
 
 Valid events are:
@@ -51,10 +51,10 @@ Valid events are:
 !!! note ":listening"
     Triggered when the server TCP socket opens
     ```julia
-    listen(server, :listening, details::NamedTuple -> (
+    listen(server, :listening) do details::NamedTuple
         # details.port::Int
         # details.host::Union{Sockets.IPv4, Sockets.IPv6}
-    ))
+    end
     ```
 !!! note ":client"
     Triggered when a client connects to the server
@@ -62,33 +62,31 @@ Valid events are:
     Returns a [`WebsocketConnection`](@ref Websocket-Connection) to the callback.
 
     ```julia
-    listen(server, :client, client::WebsocketConnection -> (
-        begin
-            # ...
-        end
-    ))
+    listen(server, :client) do client::WebsocketConnection
+        # ...
+    end
     ```
 !!! note ":connectError"
     Triggered when an attempt to open a TCP socket listener fails
     ```julia
-    listen(server, :connectError, err::WebsocketError.ConnectError -> (
+    listen(server, :connectError) do err::WebsocketError.ConnectError
         # err.msg::String
-        # err.log::Function -> logs the error message with stack trace
-    ))
+        # err.log::Function > logs the error message with stack trace
+    end
     ```
 !!! note ":closed"
     Triggered when the server TCP socket closes
     ```julia
-    listen(server, :closed, details::NamedTuple -> (
+    listen(server, :closed) do details::NamedTuple
         # details.port::Int
         # details.host::Union{Sockets.IPv4, Sockets.IPv6}
-    ))
+    end
     ```
 """
 function listen(
+    cb::Function,
     self::WebsocketServer,
-    event::Symbol,
-    cb::Function
+    event::Symbol    
 )
     if !haskey(self.callbacks, event)
         return @warn "WebsocketServer has no listener for :$event."

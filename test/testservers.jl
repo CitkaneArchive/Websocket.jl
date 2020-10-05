@@ -1,16 +1,17 @@
 function servercanlisten(server::WebsocketServer, port::Int = 8080)
     ended = Condition()
     
-    listen(server, :connectError,  err -> (
+    listen(server, :connectError) do  err
         notify(ended, err.msg)
-    ))
-    listen(server, :listening, detail -> (
+    end
+    listen(server, :listening) do detail
         close(server)
-    ))
-    listen(server, :client, () -> ())
-    listen(server, :closed, detail -> (
+    end
+    listen(server, :client) do client
+    end
+    listen(server, :closed) do detail
         notify(ended, detail)
-    ))
+    end
 
     @async serve(server, port)
 
@@ -20,14 +21,14 @@ end
 function echoserver(server::WebsocketServer, port::Int = 8080)
     started = Condition()
 
-    listen(server, :client, ws -> (
-        listen(ws, :message, message -> (
+    listen(server, :client) do ws
+        listen(ws, :message) do message
             send(ws, message)
-        ))
-    ))
-    listen(server, :listening, detail -> (
+        end
+    end
+    listen(server, :listening) do detail
         notify(started, server)
-    ))
+    end
 
     @async serve(server, port)
 
