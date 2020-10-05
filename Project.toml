@@ -1,7 +1,7 @@
 name = "Websocket"
 uuid = "bfba07e7-5cfa-4c2d-9335-97d81f085c44"
 authors = ["Michael Jonker <michael@openpoint.ie> and contributors"]
-version = "0.0.1"
+version = "0.0.2"
 
 [deps]
 Base64 = "2a0f44e3-6c83-55bd-87e4-b1978d98bd5f"
