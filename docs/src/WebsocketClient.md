@@ -31,4 +31,22 @@ Client event callback functions are registered using the `listen` method.
 ```@docs
 listen(::Function, ::WebsocketClient, ::Symbol)
 ```
+!!! note ":connect"
+    Triggered when the client has successfully connected to the server
+
+    Returns a [`WebsocketConnection`](@ref Websocket-Connection) to the callback.
+    
+    ```julia
+    listen(client, :connect) do ws::Websocket.WebsocketConnection
+        #...
+    end
+    ```
+!!! note ":connectError"
+    Triggered when an attempt to open a client connection fails
+    ```julia
+    listen(client, :connectError) do err::WebsocketError.ConnectError
+        # err.msg::String
+        # err.log::Function > logs the error message with stack trace
+    end
+    ```
 

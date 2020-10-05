@@ -48,40 +48,12 @@ Valid events are:
 - :connectError
 - :closed
 
-!!! note ":listening"
-    Triggered when the server TCP socket opens
-    ```julia
-    listen(server, :listening) do details::NamedTuple
-        # details.port::Int
-        # details.host::Union{Sockets.IPv4, Sockets.IPv6}
-    end
-    ```
-!!! note ":client"
-    Triggered when a client connects to the server
-
-    Returns a [`WebsocketConnection`](@ref Websocket-Connection) to the callback.
-
-    ```julia
-    listen(server, :client) do client::WebsocketConnection
-        # ...
-    end
-    ```
-!!! note ":connectError"
-    Triggered when an attempt to open a TCP socket listener fails
-    ```julia
-    listen(server, :connectError) do err::WebsocketError.ConnectError
-        # err.msg::String
-        # err.log::Function > logs the error message with stack trace
-    end
-    ```
-!!! note ":closed"
-    Triggered when the server TCP socket closes
-    ```julia
-    listen(server, :closed) do details::NamedTuple
-        # details.port::Int
-        # details.host::Union{Sockets.IPv4, Sockets.IPv6}
-    end
-    ```
+# Example
+```julia
+listen(server, :client) do client
+    #...
+end
+```
 """
 function listen(
     cb::Function,

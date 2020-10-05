@@ -31,31 +31,19 @@ struct WebsocketClient
     end
 end
 """
-    listen(callback::Function, server::Websocket.WebsocketClient, event::Symbol)
+    listen(callback::Function, client::Websocket.WebsocketClient, event::Symbol)
 Register event callbacks onto a client. The callback must be a function with exactly one argument.
 
 Valid events are:
 - :connect
 - :connectError
 
-!!! note ":connect"
-    Triggered when the client has successfully connected to the server
-
-    Returns a [`WebsocketConnection`](@ref Websocket-Connection) to the callback.
-    
-    ```julia
-    listen(client, :connect) do ws::Websocket.WebsocketConnection
-        #...
-    end
-    ```
-!!! note ":connectError"
-    Triggered when an attempt to open a client connection fails
-    ```julia
-    listen(client, :connectError) do err::WebsocketError.ConnectError
-        # err.msg::String
-        # err.log::Function > logs the error message with stack trace
-    end
-    ```
+# Example
+```julia
+listen(client, :connect) do ws
+    #...
+end
+```
 """
 function listen(
     cb::Function,
@@ -193,7 +181,7 @@ function Base.open(client::WebsocketClient, url::String, headers::Dict{String, S
     makeConnection(client, url, headers; options...)
 end
 """
-    isopen(server::Websocket.WebsocketServer)::Bool
+    isopen(client::Websocket.WebsocketClient)::Bool
 Returns a Bool indication if the client TCP connection is open.
 """
 function Base.isopen(client::WebsocketClient)
