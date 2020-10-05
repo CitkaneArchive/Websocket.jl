@@ -11,4 +11,3 @@ os:
 branches:
   only:
   - master
-  - staging
