@@ -131,8 +131,13 @@ function listen(
                     cb(data)
                 catch err
                     err = CallbackError(err, catch_backtrace())
-                    err.log()
-                    exit()
+                    callback = self.callbacks[:error]
+                    if callback !== false && key !== :error
+                        callback(err)
+                    else
+                        err.log()
+                        exit()
+                    end
                 end
             )
             if key === :message && length(self.io[:stash]) > 0
