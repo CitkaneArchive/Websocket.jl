@@ -1,4 +1,4 @@
-# Websocket.jl
+# Websocket.jl [![GitHub Repo stars](https://img.shields.io/github/stars/citkane/Websocket.jl?style=social)](https://github.com/citkane/Websocket.jl)
 [![Build Status](https://travis-ci.org/citkane/Websocket.jl.svg?branch=master)](https://travis-ci.org/citkane/Websocket.jl)
 [![Coverage Status](https://coveralls.io/repos/github/citkane/Websocket.jl/badge.svg?branch=master)](https://coveralls.io/github/citkane/Websocket.jl?branch=master)
 [![](https://img.shields.io/badge/docs-stable-blue.svg)](https://citkane.github.io/Websocket.jl/stable)
