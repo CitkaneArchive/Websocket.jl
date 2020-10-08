@@ -8,7 +8,7 @@ using Websocket
 
 server = WebsocketServer([; serverOptions...])
 # ...
-serve(server, [port, host, ; socketOptions...])
+serve(server[, port, host; socketOptions...])
 ```
 ```@meta
 CurrentModule = Websocket
